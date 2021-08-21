@@ -51,3 +51,50 @@ What the server does not keep:
 - user sessions
 - secret history
 
+If the sender disconnects, the live handoff stops. `shhx` is not an offline dropbox.
+
+## Security Model
+
+- the browser generates a local anonymous identity
+- the sender secret is encrypted client-side
+- the decryption factor can include:
+  - nothing extra
+  - a passphrase
+  - the current authenticator code
+- owner-side local feed storage is encrypted at rest in the browser
+- the server only sees metadata needed for live signaling
+- request limits, validation, rate limiting, and strict security headers are enabled on the HTTP side
+
+## Current Limits
+
+- both sides must be online at the same time
+- connectivity depends on browser WebRTC support and network conditions
+- restrictive networks can still break peer connectivity
+- there is no account recovery
+- there is no offline delivery
+
+## Run
+
+```bash
+make run
+```
+
+Open `http://localhost:8194`.
+
+## Build
+
+```bash
+make build
+```
+
+The final binary embeds the generated frontend assets.
+
+## Test
+
+```bash
+make test
+```
+
+## Project
+
+- GitHub: `https://github.com/sanix-darker/shhx.dev`
