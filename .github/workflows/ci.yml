@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          test -z "$(gofmt -l main.go internal/app/server.go internal/room/hub.go internal/room/hub_test.go tools/minify-assets/main.go)"
+
+      - name: Generate assets
+        run: go run ./tools/minify-assets
+
+      - name: Run tests
+        run: CGO_ENABLED=0 go test -trimpath ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -buildid=" .
