@@ -1,0 +1,31 @@
+http://shhx.dev {
+	redir https://shhx.dev{uri} permanent
+}
+
+http://www.shhx.dev {
+	redir https://shhx.dev{uri} permanent
+}
+
+https://shhx.dev {
+	tls internal
+	reverse_proxy 127.0.0.1:8194
+	encode gzip
+
+	header {
+		-Server
+	}
+
+	@css path *.css
+	header @css Content-Type text/css
+
+	@js path *.js
+	header @js Content-Type application/javascript
+
+	@svg path *.svg
+	header @svg Content-Type image/svg+xml
+}
+
+https://www.shhx.dev {
+	tls internal
+	redir https://shhx.dev{uri} permanent
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=shhx live encrypted secret handoff
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shhx
+Group=shhx
+WorkingDirectory=/opt/shhx
+Environment=ADDR=:8194
+ExecStart=/opt/shhx/shhx
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/shhx
+
+[Install]
+WantedBy=multi-user.target
