@@ -51,3 +51,41 @@ func minifyJS(src []byte) []byte {
 		out.WriteString(line)
 		out.WriteByte('\n')
 	}
+	if err := scanner.Err(); err != nil && err != io.EOF {
+		fail(err)
+	}
+	return out.Bytes()
+}
+
+func minifyCSS(src []byte) []byte {
+	text := strings.ReplaceAll(string(src), "\n", " ")
+	text = strings.ReplaceAll(text, "\t", " ")
+	text = collapseSpaces(text)
+
+	replacements := []string{
+		": ", ":",
+		"; ", ";",
+		"{ ", "{",
+		" }", "}",
+		", ", ",",
+		"> ", ">",
+		" <", "<",
+		"( ", "(",
+		" )", ")",
+	}
+	for i := 0; i < len(replacements); i += 2 {
+		text = strings.ReplaceAll(text, replacements[i], replacements[i+1])
+	}
+
+	return []byte(strings.TrimSpace(text))
+}
+
+func collapseSpaces(input string) string {
+	fields := strings.Fields(input)
+	return strings.Join(fields, " ")
+}
+
+func fail(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
+}
