@@ -104,3 +104,56 @@ func (h *Hub) JoinRoom(code, peerID, displayName string) error {
 		return ErrRoomFull
 	}
 	state.lastActive = time.Now()
+	state.peers[peerID] = &peer{
+		id:          peerID,
+		displayName: displayName,
+		role:        RoleGuest,
+		streams:     make(map[*subscription]struct{}),
+	}
+	h.broadcastLocked(state, Event{
+		Type: "peer-joined",
+		Data: PeerSnapshot{ID: peerID, DisplayName: displayName, Role: RoleGuest},
+	})
+	return nil
+}
+
+func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.rooms[code]
+	if !ok {
+		return nil, nil, ErrRoomNotFound
+	}
+	p, ok := state.peers[peerID]
+	if !ok {
+		return nil, nil, ErrPeerNotFound
+	}
+	state.lastActive = time.Now()
+
+	sub := &subscription{ch: make(chan Event, 32)}
+	p.streams[sub] = struct{}{}
+
+	peers := make([]PeerSnapshot, 0, len(state.peers))
+	for _, candidate := range state.peers {
+		peers = append(peers, PeerSnapshot{
+			ID:          candidate.id,
+			DisplayName: candidate.displayName,
+			Role:        candidate.role,
+		})
+	}
+	sub.ch <- Event{Type: "room-state", Data: peers}
+
+	cleanup := func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if state, ok := h.rooms[code]; ok {
+			if peer, ok := state.peers[peerID]; ok {
+				delete(peer.streams, sub)
+			}
+		}
+		close(sub.ch)
+	}
+
+	return sub.ch, cleanup, nil
+}
