@@ -51,3 +51,56 @@ type peer struct {
 type roomState struct {
 	code       string
 	peers      map[string]*peer
+	createdAt  time.Time
+	lastActive time.Time
+}
+
+type Hub struct {
+	mu      sync.RWMutex
+	rooms   map[string]*roomState
+	roomTTL time.Duration
+}
+
+func NewHub() *Hub {
+	hub := &Hub{
+		rooms:   make(map[string]*roomState),
+		roomTTL: 30 * time.Minute,
+	}
+	go hub.startJanitor()
+	return hub
+}
+
+func (h *Hub) CreateRoom(ownerID, displayName string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	code := randomCodeLocked(h.rooms)
+	now := time.Now()
+	state := &roomState{
+		code:       code,
+		peers:      make(map[string]*peer),
+		createdAt:  now,
+		lastActive: now,
+	}
+	state.peers[ownerID] = &peer{
+		id:          ownerID,
+		displayName: displayName,
+		role:        RoleOwner,
+		streams:     make(map[*subscription]struct{}),
+	}
+	h.rooms[code] = state
+	return code
+}
+
+func (h *Hub) JoinRoom(code, peerID, displayName string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.rooms[code]
+	if !ok {
+		return ErrRoomNotFound
+	}
+	if len(state.peers) >= 2 {
+		return ErrRoomFull
+	}
+	state.lastActive = time.Now()
