@@ -263,3 +263,27 @@ func (h *Hub) pruneExpired(now time.Time) {
 			for _, peer := range state.peers {
 				for sub := range peer.streams {
 					close(sub.ch)
+				}
+			}
+			delete(h.rooms, code)
+		}
+	}
+}
+
+func randomCodeLocked(existing map[string]*roomState) string {
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	for {
+		buf := make([]byte, 6)
+		raw := make([]byte, 6)
+		if _, err := rand.Read(raw); err != nil {
+			panic(err)
+		}
+		for i := range buf {
+			buf[i] = alphabet[int(raw[i])%len(alphabet)]
+		}
+		code := string(buf)
+		if _, ok := existing[code]; !ok {
+			return code
+		}
+	}
+}
