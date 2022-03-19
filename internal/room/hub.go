@@ -157,3 +157,56 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 
 	return sub.ch, cleanup, nil
 }
+
+func (h *Hub) Send(code, from, to, signalType string, payload json.RawMessage) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.rooms[code]
+	if !ok {
+		return ErrRoomNotFound
+	}
+	if _, ok := state.peers[from]; !ok {
+		return ErrPeerNotFound
+	}
+	state.lastActive = time.Now()
+
+	evt := Event{
+		Type: "signal",
+		Data: SignalData{
+			From:    from,
+			To:      to,
+			Type:    signalType,
+			Payload: payload,
+		},
+	}
+
+	if to != "" {
+		peer, ok := state.peers[to]
+		if !ok {
+			return ErrPeerNotFound
+		}
+		for sub := range peer.streams {
+			select {
+			case sub.ch <- evt:
+			default:
+			}
+		}
+		return nil
+	}
+
+	for id, peer := range state.peers {
+		if id == from {
+			continue
+		}
+		for sub := range peer.streams {
+			select {
+			case sub.ch <- evt:
+			default:
+			}
+		}
+	}
+
+	return nil
+}
+
