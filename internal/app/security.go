@@ -104,3 +104,56 @@ func (l *rateLimiter) allow(ip, bucketName string, now time.Time) bool {
 	}
 	bucket.lastSeen = now
 
+	if bucket.tokens < 1 {
+		return false
+	}
+
+	bucket.tokens--
+	return true
+}
+
+func (l *rateLimiter) pruneLocked(now time.Time) {
+	for key, bucket := range l.buckets {
+		parts := strings.SplitN(key, "|", 2)
+		if len(parts) != 2 {
+			delete(l.buckets, key)
+			continue
+		}
+		limit, ok := l.limits[parts[0]]
+		if !ok {
+			limit = l.limits["other"]
+		}
+		if now.Sub(bucket.lastSeen) > limit.cleanupWindow {
+			delete(l.buckets, key)
+		}
+	}
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		styleNonce := randomToken(12)
+		csp := strings.Join([]string{
+			"default-src 'self'",
+			"base-uri 'none'",
+			"connect-src 'self' ws: wss:",
+			"font-src 'self'",
+			"form-action 'self'",
+			"frame-ancestors 'none'",
+			"img-src 'self' data:",
+			"object-src 'none'",
+			"script-src 'self'",
+			fmt.Sprintf("style-src 'self' 'nonce-%s'", styleNonce),
+		}, "; ")
+
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Security-Policy", csp)
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), xr-spatial-tracking=()")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), cspNonceKey{}, styleNonce)))
+	})
+}
+
