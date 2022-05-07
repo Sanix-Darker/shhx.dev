@@ -210,3 +210,56 @@ func (h *Hub) Send(code, from, to, signalType string, payload json.RawMessage) e
 	return nil
 }
 
+func (h *Hub) Leave(code, peerID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.rooms[code]
+	if !ok {
+		return
+	}
+	if _, ok := state.peers[peerID]; !ok {
+		return
+	}
+
+	delete(state.peers, peerID)
+	state.lastActive = time.Now()
+	h.broadcastLocked(state, Event{
+		Type: "peer-left",
+		Data: map[string]string{"id": peerID},
+	})
+
+	if len(state.peers) == 0 {
+		delete(h.rooms, code)
+	}
+}
+
+func (h *Hub) broadcastLocked(state *roomState, evt Event) {
+	for _, peer := range state.peers {
+		for sub := range peer.streams {
+			select {
+			case sub.ch <- evt:
+			default:
+			}
+		}
+	}
+}
+
+func (h *Hub) startJanitor() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		h.pruneExpired(time.Now())
+	}
+}
+
+func (h *Hub) pruneExpired(now time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for code, state := range h.rooms {
+		if now.Sub(state.lastActive) > h.roomTTL {
+			for _, peer := range state.peers {
+				for sub := range peer.streams {
+					close(sub.ch)
