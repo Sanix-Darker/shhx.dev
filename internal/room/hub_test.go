@@ -104,3 +104,12 @@ func TestHubPruneExpiredRooms(t *testing.T) {
 }
 
 func expectEvent(t *testing.T, ch <-chan Event) Event {
+	t.Helper()
+	select {
+	case evt := <-ch:
+		return evt
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for event")
+		return Event{}
+	}
+}
