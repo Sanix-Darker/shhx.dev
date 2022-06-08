@@ -316,3 +316,13 @@ func validPeerID(peerID string) bool {
 		}
 	}
 	return true
+}
+
+func validSignalType(signalType string) bool {
+	switch signalType {
+	case "offer", "answer", "candidate", "ready":
+		return true
+	default:
+		return false
+	}
+}
