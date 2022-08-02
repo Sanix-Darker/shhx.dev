@@ -157,3 +157,56 @@ func withSecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func cspStyleNonce(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if value, ok := r.Context().Value(cspNonceKey{}).(string); ok {
+		return value
+	}
+	return ""
+}
+
+func withRateLimit(limiter *rateLimiter, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if limiter == nil {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !limiter.allow(clientIP(r), classifyRoute(r), time.Now()) {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, errRateLimited.Error(), http.StatusTooManyRequests)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func classifyRoute(r *http.Request) string {
+	switch {
+	case r.URL.Path == "/" && r.Method == http.MethodGet:
+		return "index"
+	case r.URL.Path == "/preview.svg" && r.Method == http.MethodGet:
+		return "preview"
+	case r.URL.Path == "/ui/rooms/create" && r.Method == http.MethodPost:
+		return "create"
+	case r.URL.Path == "/ui/rooms/join" && r.Method == http.MethodPost:
+		return "join"
+	case strings.HasPrefix(r.URL.Path, "/api/rooms/") && strings.HasSuffix(r.URL.Path, "/events") && r.Method == http.MethodGet:
+		return "events"
+	case strings.HasPrefix(r.URL.Path, "/api/rooms/") && strings.HasSuffix(r.URL.Path, "/signal") && r.Method == http.MethodPost:
+		return "signal"
+	case strings.HasPrefix(r.URL.Path, "/api/rooms/") && strings.HasSuffix(r.URL.Path, "/leave") && r.Method == http.MethodPost:
+		return "leave"
+	case strings.HasPrefix(r.URL.Path, "/static/") && r.Method == http.MethodGet:
+		return "static"
+	default:
+		return "other"
+	}
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
