@@ -210,3 +210,56 @@ func classifyRoute(r *http.Request) string {
 func clientIP(r *http.Request) string {
 	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
 		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			if ip := strings.TrimSpace(parts[0]); net.ParseIP(ip) != nil {
+				return ip
+			}
+		}
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	if net.ParseIP(strings.TrimSpace(r.RemoteAddr)) != nil {
+		return strings.TrimSpace(r.RemoteAddr)
+	}
+	return "unknown"
+}
+
+func ensureSameOrigin(r *http.Request) error {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return errInvalidOrigin
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return errInvalidOrigin
+	}
+
+	if parsed.Host != r.Host {
+		return errInvalidOrigin
+	}
+
+	expectedScheme := "http"
+	if r.TLS != nil {
+		expectedScheme = "https"
+	}
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+		expectedScheme = forwarded
+	}
+	if parsed.Scheme != expectedScheme {
+		return errInvalidOrigin
+	}
+
+	return nil
+}
+
+func requireFormContentType(r *http.Request) error {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if contentType == "" {
+		return nil
