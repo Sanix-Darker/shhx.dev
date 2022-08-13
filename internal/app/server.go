@@ -104,3 +104,56 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func shareCodeFromRequest(r *http.Request) (string, bool) {
+	if r.URL.Path == "/" {
+		return "", true
+	}
+
+	trimmed := strings.Trim(strings.TrimSpace(r.URL.Path), "/")
+	if trimmed == "" || strings.Contains(trimmed, "/") {
+		return "", false
+	}
+
+	code := strings.ToUpper(trimmed)
+	if !validRoomCode(code) {
+		return "", false
+	}
+
+	return code, true
+}
+
+func (s *Server) handlePreviewSVG(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	if _, err := io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#F7F4ED"/>
+  <rect x="68" y="68" width="1064" height="494" rx="42" fill="#FFFCF7" stroke="#D7CEC1"/>
+  <circle cx="996" cy="154" r="88" fill="#E5EFE9"/>
+  <circle cx="171" cy="123" r="56" fill="#F0E7D9"/>
+  <rect x="132" y="158" width="208" height="208" rx="38" fill="#1F6C5C"/>
+  <path d="M236 230C236 197.98 210.02 172 178 172C145.98 172 120 197.98 120 230V258H104V352H252V258H236V230ZM150 230C150 214.536 162.536 202 178 202C193.464 202 206 214.536 206 230V258H150V230Z" fill="#F8F4ED"/>
+  <text x="390" y="226" fill="#6B625B" font-family="Avenir Next, Segoe UI, sans-serif" font-size="26" letter-spacing="3">SHHX</text>
+  <text x="390" y="304" fill="#1E1A17" font-family="Avenir Next, Segoe UI, sans-serif" font-size="64" font-weight="700">Live encrypted secret vault.</text>
+  <text x="390" y="366" fill="#1E1A17" font-family="Avenir Next, Segoe UI, sans-serif" font-size="64" font-weight="700">Open the link while the sender stays online.</text>
+  <text x="390" y="446" fill="#655D56" font-family="Avenir Next, Segoe UI, sans-serif" font-size="30">Optional OTP protection. No server-side secret storage.</text>
+</svg>`); err != nil {
+		return
+	}
+}
+
+func (s *Server) handleCreateRoomCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
