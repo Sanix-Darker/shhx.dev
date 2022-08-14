@@ -263,3 +263,56 @@ func requireFormContentType(r *http.Request) error {
 	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
 	if contentType == "" {
 		return nil
+	}
+	if strings.HasPrefix(contentType, "application/x-www-form-urlencoded") {
+		return nil
+	}
+	return fmt.Errorf("invalid content type")
+}
+
+func requireJSONContentType(r *http.Request) error {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if strings.HasPrefix(contentType, "application/json") {
+		return nil
+	}
+	return fmt.Errorf("invalid content type")
+}
+
+func sanitizeDisplayName(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "Anonymous"
+	}
+	if utf8.RuneCountInString(v) > maxDisplayNameLen {
+		v = string([]rune(v)[:maxDisplayNameLen])
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, v)
+}
+
+func validRoomCode(code string) bool {
+	if len(code) != maxRoomCodeLen {
+		return false
+	}
+	for _, r := range code {
+		if !strings.ContainsRune("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validPeerID(peerID string) bool {
+	if peerID == "" || len(peerID) > maxPeerIDLen {
+		return false
+	}
+	for _, r := range peerID {
+		if !strings.ContainsRune("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567", r) {
+			return false
+		}
+	}
+	return true
