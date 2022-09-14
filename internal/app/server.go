@@ -210,3 +210,56 @@ func (s *Server) handleJoinRoomCard(w http.ResponseWriter, r *http.Request) {
 	if !validRoomCode(roomCode) {
 		http.Error(w, errInvalidRoomCode.Error(), http.StatusBadRequest)
 		return
+	}
+
+	peerID := randomToken(10)
+	if err := s.hub.JoinRoom(roomCode, peerID, displayName); err != nil {
+		http.Error(w, err.Error(), statusForErr(err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.templates.ExecuteTemplate(w, "room-card", roomCardData{
+		RoomCode:    roomCode,
+		Role:        room.RoleGuest,
+		PeerID:      peerID,
+		DisplayName: displayName,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleRoomAPI(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/rooms/")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+
+	roomCode := strings.ToUpper(parts[0])
+	if !validRoomCode(roomCode) {
+		http.Error(w, errInvalidRoomCode.Error(), http.StatusBadRequest)
+		return
+	}
+	switch parts[1] {
+	case "events":
+		s.handleEvents(w, r, roomCode)
+	case "signal":
+		s.handleSignal(w, r, roomCode)
+	case "leave":
+		s.handleLeave(w, r, roomCode)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	peerID := strings.TrimSpace(r.URL.Query().Get("peer"))
+	if !validPeerID(peerID) {
+		http.Error(w, errInvalidPeerID.Error(), http.StatusBadRequest)
