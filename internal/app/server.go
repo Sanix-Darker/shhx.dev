@@ -157,3 +157,56 @@ func (s *Server) handleCreateRoomCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if err := ensureSameOrigin(r); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if err := requireFormContentType(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	displayName := sanitizeDisplayName(r.FormValue("display_name"))
+	peerID := randomToken(10)
+	roomCode := s.hub.CreateRoom(peerID, displayName)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.templates.ExecuteTemplate(w, "room-card", roomCardData{
+		RoomCode:    roomCode,
+		Role:        room.RoleOwner,
+		PeerID:      peerID,
+		DisplayName: displayName,
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleJoinRoomCard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := ensureSameOrigin(r); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if err := requireFormContentType(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxFormBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	displayName := sanitizeDisplayName(r.FormValue("display_name"))
+	roomCode := strings.ToUpper(strings.TrimSpace(r.FormValue("room_code")))
+	if !validRoomCode(roomCode) {
+		http.Error(w, errInvalidRoomCode.Error(), http.StatusBadRequest)
+		return
