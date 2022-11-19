@@ -263,3 +263,56 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode s
 	peerID := strings.TrimSpace(r.URL.Query().Get("peer"))
 	if !validPeerID(peerID) {
 		http.Error(w, errInvalidPeerID.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ch, cleanup, err := s.hub.Subscribe(roomCode, peerID)
+	if err != nil {
+		http.Error(w, err.Error(), statusForErr(err))
+		return
+	}
+	defer cleanup()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "stream unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := io.WriteString(w, "retry: 2000\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			payload, err := json.Marshal(evt)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "data: %s\n\n", payload)
+			flusher.Flush()
+		}
+	}
+}
+
+type signalEnvelope struct {
+	From    string          `json:"from"`
+	To      string          `json:"to"`
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+func (s *Server) handleSignal(w http.ResponseWriter, r *http.Request, roomCode string) {
+	if r.Method != http.MethodPost {
