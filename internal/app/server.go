@@ -316,3 +316,56 @@ type signalEnvelope struct {
 
 func (s *Server) handleSignal(w http.ResponseWriter, r *http.Request, roomCode string) {
 	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := ensureSameOrigin(r); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if err := requireJSONContentType(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxSignalBodyBytes)
+	defer r.Body.Close()
+	var envelope signalEnvelope
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	if !validPeerID(envelope.From) || (envelope.To != "" && !validPeerID(envelope.To)) {
+		http.Error(w, "missing signal fields", http.StatusBadRequest)
+		return
+	}
+	if !validSignalType(envelope.Type) {
+		http.Error(w, "missing signal fields", http.StatusBadRequest)
+		return
+	}
+	if len(envelope.Payload) > maxSignalBodyBytes/2 {
+		http.Error(w, "signal payload too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	if err := s.hub.Send(roomCode, envelope.From, envelope.To, envelope.Type, envelope.Payload); err != nil {
+		http.Error(w, err.Error(), statusForErr(err))
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request, roomCode string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
