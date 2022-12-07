@@ -369,3 +369,49 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request, roomCode st
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if err := ensureSameOrigin(r); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+
+	peerID := strings.TrimSpace(r.URL.Query().Get("peer"))
+	if !validPeerID(peerID) {
+		http.Error(w, errInvalidPeerID.Error(), http.StatusBadRequest)
+		return
+	}
+
+	s.hub.Leave(roomCode, peerID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func originForRequest(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+		scheme = forwarded
+	}
+	return scheme + "://" + r.Host
+}
+
+func randomToken(size int) string {
+	buf := make([]byte, size)
+	if _, err := rand.Read(buf); err != nil {
+		panic(err)
+	}
+	return strings.TrimRight(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), "=")
+}
+
+func statusForErr(err error) int {
+	switch {
+	case errors.Is(err, room.ErrRoomNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, room.ErrRoomFull):
+		return http.StatusConflict
+	case errors.Is(err, room.ErrPeerNotFound):
+		return http.StatusNotFound
+	default:
+		return http.StatusBadRequest
+	}
+}
