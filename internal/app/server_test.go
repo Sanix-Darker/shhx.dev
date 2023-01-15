@@ -104,3 +104,8 @@ func TestSecurityHeadersPresent(t *testing.T) {
 
 	if rr.Header().Get("Content-Security-Policy") == "" {
 		t.Fatal("expected csp header")
+	}
+	if rr.Header().Get("X-Frame-Options") != "DENY" {
+		t.Fatalf("expected X-Frame-Options DENY, got %q", rr.Header().Get("X-Frame-Options"))
+	}
+}
