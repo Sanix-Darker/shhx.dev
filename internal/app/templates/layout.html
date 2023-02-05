@@ -104,3 +104,56 @@
               <input id="create-burn-toggle" type="checkbox" checked hidden>
               <input id="create-totp-toggle" type="checkbox" hidden>
             </div>
+            <div class="editor-shell" id="secret-editor-shell">
+              <div class="line-gutter" id="secret-editor-gutter" aria-hidden="true">1</div>
+              <textarea
+                id="create-secret-input"
+                rows="5"
+                maxlength="4096"
+                aria-label="Secret text"
+                placeholder="Write one secret. Keep it short and intentional."
+              ></textarea>
+            </div>
+            <div class="input-action-row">
+              <select id="create-ttl-select" class="share-link-input ttl-inline-select" aria-label="Secret TTL">
+                <option value="">no ttl</option>
+                <option value="300">5 min</option>
+                <option value="1800">30 min</option>
+                <option value="3600">1 hour</option>
+                <option value="21600">6 hours</option>
+                <option value="86400">24 hours</option>
+              </select>
+              <input
+                id="create-hint-input"
+                class="share-link-input hint-inline-input"
+                type="text"
+                autocomplete="off"
+                maxlength="72"
+                aria-label="Secret hint"
+                placeholder="hint"
+              >
+              <input
+                id="create-passphrase-input"
+                class="share-link-input"
+                type="password"
+                autocomplete="off"
+                maxlength="128"
+                aria-label="Optional passphrase"
+                placeholder="Add a passphrase for extra safety"
+              >
+              <button type="button" class="icon-button" id="create-passphrase-visibility" aria-label="Show passphrase" title="Show passphrase">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+                  <circle cx="12" cy="12" r="2.5"></circle>
+                </svg>
+                <span class="sr-only">Show passphrase</span>
+              </button>
+              <button type="button" class="icon-button" id="create-passphrase-copy" aria-label="Copy passphrase" title="Copy passphrase">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="9" y="9" width="10" height="10" rx="2" />
+                  <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                </svg>
+                <span class="sr-only">Copy passphrase</span>
+              </button>
+            </div>
+            <div class="send-actions">
