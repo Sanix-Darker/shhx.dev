@@ -51,3 +51,56 @@
         <div class="boot-pill"></div>
       </div>
       <div class="boot-aside">
+        <div class="boot-line w1"></div>
+        <div class="boot-line w2"></div>
+        <div class="boot-line w4"></div>
+      </div>
+    </div>
+  </div>
+  <div class="page-shell">
+    <main class="main-stage">
+      <section class="feed-column">
+        <details class="send-bubble composer-bubble feed-composer" id="composer" open>
+          <summary title="Click to open or close">// NEW SECRET</summary>
+          <div class="composer-body">
+            <div class="composer-toolbar" id="composer-toolbar" hidden>
+              <p class="signal-note" id="bulk-selection-note" hidden>No secrets selected.</p>
+              <div class="bulk-actions-row" id="bulk-actions-row" hidden>
+                <button type="button" class="icon-button bulk-action-button" id="bulk-enable-button" aria-label="Turn on selected secrets" title="Turn on selected secrets">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 3v8" />
+                    <path d="M7.5 6.75a7 7 0 1 0 9 0" />
+                  </svg>
+                  <span class="sr-only">Turn on selected secrets</span>
+                </button>
+                <button type="button" class="icon-button bulk-action-button" id="bulk-disable-button" aria-label="Turn off selected secrets" title="Turn off selected secrets">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M12 3v8" />
+                    <path d="M7.5 6.75a7 7 0 1 0 9 0" />
+                    <path d="M4 4l16 16" />
+                  </svg>
+                  <span class="sr-only">Turn off selected secrets</span>
+                </button>
+                <button type="button" class="icon-button bulk-action-button" id="bulk-email-button" aria-label="Send selected secrets by email" title="Send selected secrets by email">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path d="m5 8 7 5 7-5" />
+                  </svg>
+                  <span class="sr-only">Send selected secrets by email</span>
+                </button>
+                <button type="button" class="icon-button bulk-action-button danger-button" id="bulk-delete-button" aria-label="Delete selected secrets" title="Delete selected secrets">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M4 7h16" />
+                    <path d="M9 7V4h6v3" />
+                    <path d="M7 7l1 12h8l1-12" />
+                    <path d="M10 11v5" />
+                    <path d="M14 11v5" />
+                  </svg>
+                  <span class="sr-only">Delete selected secrets</span>
+                </button>
+              </div>
+            </div>
+            <div class="editor-head">
+              <input id="create-burn-toggle" type="checkbox" checked hidden>
+              <input id="create-totp-toggle" type="checkbox" hidden>
+            </div>
