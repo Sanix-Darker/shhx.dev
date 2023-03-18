@@ -210,3 +210,56 @@
                   <path d="M12 5v14" />
                   <path d="M5 12h14" />
                 </svg>
+                <span>CREATE</span>
+              </button>
+            </div>
+          </div>
+        </details>
+        <section id="feed" class="feed" aria-live="polite">
+          <div class="empty-feed" id="empty-feed">
+            <p class="empty-icon" aria-hidden="true">⟡</p>
+            <p class="eyebrow">feed</p>
+            <p class="signal-note">No secrets yet. Create one above and it will appear here.</p>
+          </div>
+        </section>
+        <div class="guest-create-wrap" id="guest-create-wrap" hidden>
+          <button type="button" class="icon-button guest-create-button" id="guest-create-button" aria-label="Create a new secret" title="Create a new secret">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 5v14" />
+              <path d="M5 12h14" />
+            </svg>
+            <span class="sr-only">Create a new secret</span>
+          </button>
+        </div>
+      </section>
+
+      <aside class="compose-column">
+        <div class="search-bubble">
+          <input
+            id="feed-search-input"
+            class="share-link-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label="Search secrets"
+            placeholder="Search by secret id or hint"
+          >
+        </div>
+        <section class="hero-bubble">
+          <div>
+            <p class="eyebrow">shhx</p>
+            <h1>Encrypt once. Deliver live.</h1>
+            <p class="lede">Ephemeral browser-side encryption, live peer delivery, zero database, sender stays online.</p>
+          </div>
+        </section>
+
+        <div class="compose-meta">
+          <details class="dock-item" open>
+            <summary title="Click to open or close">// BROWSER</summary>
+            <div class="dock-body">
+              <ul class="rules-list browser-list">
+                <li id="identity-state">Preparing local browser id.</li>
+                <li>no login or signup</li>
+                <li>id stays in this browser</li>
+              </ul>
+            </div>
