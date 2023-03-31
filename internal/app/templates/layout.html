@@ -263,3 +263,45 @@
                 <li>id stays in this browser</li>
               </ul>
             </div>
+          </details>
+          <details class="dock-item" open>
+            <summary title="Click to open or close">// HOW IT WORKS</summary>
+            <div class="dock-body">
+              <ul class="rules-list">
+                <li>live links only</li>
+                <li>sender and receiver must stay online</li>
+                <li>delivery starts only when the peer channel is ready</li>
+                <li>no database and no server-side secret storage</li>
+              </ul>
+            </div>
+          </details>
+        </div>
+
+        <footer class="site-footer">
+          <p class="theme-footer-action">
+            <button type="button" class="icon-button" id="theme-toggle-button" aria-label="Switch to light theme" title="Switch to light theme">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
+              </svg>
+              <span class="sr-only">Switch theme</span>
+            </button>
+          </p>
+          <p>Made by <a href="https://github.com/sanix-darker" target="_blank" rel="noreferrer">dk</a></p>
+          <p class="footer-links">
+            <a href="https://github.com/sanix-darker/shhx.dev" target="_blank" rel="noreferrer" aria-label="Open shhx project on GitHub" title="Open shhx project on GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.03c-3.34.73-4.04-1.42-4.04-1.42-.55-1.37-1.33-1.73-1.33-1.73-1.09-.73.08-.72.08-.72 1.2.09 1.84 1.22 1.84 1.22 1.07 1.81 2.8 1.29 3.49.99.11-.76.42-1.29.77-1.59-2.66-.3-5.47-1.31-5.47-5.85 0-1.29.47-2.34 1.22-3.16-.12-.3-.53-1.52.12-3.16 0 0 1-.31 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.51 3.29-1.2 3.29-1.2.66 1.64.25 2.86.13 3.16.76.82 1.22 1.87 1.22 3.16 0 4.55-2.81 5.55-5.49 5.84.43.37.82 1.1.82 2.22v3.3c0 .32.21.69.83.57A12 12 0 0 0 12 .5Z" />
+              </svg>
+              <span>Project</span>
+            </a>
+          </p>
+        </footer>
+      </aside>
+    </main>
+  </div>
+  <div id="ui-overlay" hidden></div>
+  <div id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
+{{ end }}
