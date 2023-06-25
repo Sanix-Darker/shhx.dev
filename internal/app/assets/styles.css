@@ -51,3 +51,56 @@ body.app-ready .page-shell {
   visibility: visible;
   transition: opacity 180ms ease;
 }
+body {
+  font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+body.editor-fullscreen-open {
+  overflow: hidden;
+}
+body.ui-overlay-open {
+  overflow: hidden;
+}
+body.light-theme {
+  background: var(--bg);
+}
+button, input, textarea, select { font: inherit; }
+button, input, textarea, select, summary { outline-color: var(--accent); }
+.page-shell { width: min(1200px, calc(100vw - 28px)); margin: 0 auto; padding: 34px 0 56px; }
+.compose-meta {
+  display: grid;
+  gap: 10px;
+}
+.dock-item { background: var(--panel); backdrop-filter: blur(16px); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); overflow: hidden; }
+.dock-item summary, .composer-bubble summary, .bulk-bubble summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 18px;
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.dock-item summary::-webkit-details-marker { display: none; }
+.composer-bubble summary::-webkit-details-marker, .bulk-bubble summary::-webkit-details-marker { display: none; }
+.feed-composer[open]:not(.is-collapsed):not(.is-fullscreen-panel) > summary {
+  display: none;
+}
+.dock-body { padding: 0 18px 18px; display: grid; gap: 8px; }
+.main-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 22px;
+  align-items: start;
+}
+.feed-column {
+  max-height: none;
+  overflow: visible;
+  padding-right: 16px;
+  width: 100%;
+  display: grid;
+  gap: 18px;
+}
