@@ -104,3 +104,56 @@ button, input, textarea, select, summary { outline-color: var(--accent); }
   display: grid;
   gap: 18px;
 }
+.feed {
+  width: 100%;
+  display: grid;
+  gap: 18px;
+  justify-items: stretch;
+}
+.feed-composer {
+  width: 100%;
+  position: sticky;
+  top: 18px;
+  z-index: 12;
+  overflow: visible;
+  transition: transform 240ms ease, opacity 220ms ease, box-shadow 220ms ease;
+}
+body.editor-fullscreen-open .feed-composer {
+  z-index: 260;
+}
+.feed-composer.is-fullscreen-panel {
+  position: fixed;
+  top: 5vh;
+  left: 5vw;
+  right: 5vw;
+  width: auto;
+  max-width: none;
+  height: 75vh;
+  z-index: 280;
+  box-shadow: 0 36px 84px rgba(0, 0, 0, 0.34);
+}
+.feed-composer.is-collapsed {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.2);
+}
+.feed-composer.is-collapsed .composer-body {
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+.feed > * {
+  width: 100%;
+}
+.compose-column {
+  position: fixed;
+  top: 34px;
+  right: max(14px, calc((100vw - 1200px) / 2 + 14px));
+  width: min(380px, calc(100vw - 28px));
+  display: grid;
+  gap: 14px;
+}
+.search-bubble {
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
