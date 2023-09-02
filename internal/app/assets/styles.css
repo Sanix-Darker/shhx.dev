@@ -210,3 +210,56 @@ body.app-ready .boot-splash {
 }
 .composer-toolbar {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding-bottom: 2px;
+}
+.composer-toolbar[hidden],
+#bulk-selection-note[hidden],
+#bulk-actions-row[hidden] {
+  display: none !important;
+}
+.bulk-head {
+  display: grid;
+  gap: 4px;
+}
+.bulk-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.empty-feed {
+  width: 100%;
+  padding: 22px 20px;
+  background: var(--panel-soft);
+  border: 1px dashed var(--line);
+  border-radius: 24px;
+  text-align: center;
+  justify-items: center;
+}
+.empty-icon {
+  font-size: 1rem;
+  color: var(--muted);
+  line-height: 1;
+}
+.hero-bubble, .send-bubble, .room-bubble { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow); }
+.hero-bubble { padding: 24px; }
+.eyebrow { margin: 0 0 8px; text-transform: lowercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.78rem; }
+h1, h2, pre, p { margin: 0; }
+h1, h2 { font-family: "Avenir Next Demi Bold", "Segoe UI Semibold", sans-serif; font-weight: 700; line-height: 1.04; }
+h1 { font-size: clamp(1.08rem, 2.64vw, 1.85rem); max-width: 14ch; }
+h2 { font-size: clamp(1.16rem, 3.2vw, 1.6rem); }
+.lede, .fine-print, .signal-note { color: var(--muted); }
+.lede { margin-top: 8px; max-width: 44ch; line-height: 1.5; font-size: 0.68rem; }
+.fine-print, .signal-note {
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
+.room-bubble { padding: 22px; }
+.field-label { display: block; margin-bottom: 10px; color: var(--muted); text-transform: lowercase; font-size: 0.68rem; }
+.inline-label { margin-bottom: 0; }
+.compact-label { margin-bottom: 6px; }
+.send-meta, .send-actions, .room-head, .secret-actions { display: flex; gap: 10px; align-items: center; }
+.send-meta, .send-actions { justify-content: space-between; }
