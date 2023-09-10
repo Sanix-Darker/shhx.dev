@@ -263,3 +263,56 @@ h2 { font-size: clamp(1.16rem, 3.2vw, 1.6rem); }
 .compact-label { margin-bottom: 6px; }
 .send-meta, .send-actions, .room-head, .secret-actions { display: flex; gap: 10px; align-items: center; }
 .send-meta, .send-actions { justify-content: space-between; }
+.send-meta-compact {
+  justify-content: flex-start;
+  gap: 12px;
+}
+.editor-head {
+  display: none;
+}
+.toggle { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.8rem; }
+.toggle input { width: 18px; height: 18px; }
+textarea, .share-link-input {
+  width: 100%;
+  border: 1px solid transparent;
+  background: var(--input);
+  color: var(--text);
+  border-radius: 18px;
+  padding: 11px 13px;
+  font-size: 0.8rem;
+  transition: border-color 180ms ease, transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+textarea:focus, .share-link-input:focus { border-color: rgba(255, 255, 255, 0.2); background: var(--surface-strong); transform: translateY(-1px); }
+textarea { resize: vertical; min-height: 110px; line-height: 1.5; }
+.editor-shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  margin-top: 10px;
+  border-radius: 20px;
+  overflow: clip;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+}
+.editor-shell textarea {
+  min-height: 118px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  padding-left: 0;
+}
+.feed-composer.is-fullscreen-panel .editor-shell {
+  min-height: min(48vh, 100%);
+}
+.editor-shell textarea:focus {
+  transform: none;
+  box-shadow: none;
+}
+.line-gutter {
+  padding: 11px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
