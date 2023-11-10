@@ -422,3 +422,56 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   height: 38px;
   padding: 0 14px;
   border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.decrypt-secret-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.decrypt-secret-button:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+.icon-button[aria-pressed="true"] {
+  background: var(--surface-strong);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: var(--accent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.icon-button[aria-pressed="true"]:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.icon-button[aria-pressed="false"] {
+  opacity: 0.78;
+}
+.icon-button[aria-pressed="true"] svg {
+  stroke-width: 1.95;
+}
+.danger-button {
+  color: var(--alert);
+}
+.auth-copy-button {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--accent);
+}
+.auth-copy-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+.sr-only {
