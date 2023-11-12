@@ -157,3 +157,56 @@ body.editor-fullscreen-open .feed-composer {
   border: 1px solid var(--line);
   border-radius: 22px;
   box-shadow: var(--shadow);
+  padding: 12px;
+}
+body.is-guest-view .search-bubble {
+  display: none;
+}
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 9999;
+}
+body.app-ready .boot-splash {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+.bulk-bubble {
+  display: grid;
+  gap: 12px;
+}
+.bulk-bubble .bulk-head,
+.bulk-bubble .bulk-actions-row,
+.composer-body {
+  padding: 0 18px 18px;
+}
+.composer-body {
+  display: grid;
+  gap: 12px;
+  height: auto;
+  opacity: 1;
+  transform: translateY(0);
+  overflow: hidden;
+  transform-origin: top center;
+  will-change: height, opacity, transform;
+  transition: height 320ms cubic-bezier(0.22, 0.8, 0.2, 1), opacity 220ms ease, transform 220ms ease;
+}
+.composer-body.is-hidden {
+  display: none;
+}
+.feed-composer.is-fullscreen-panel .composer-body {
+  display: grid;
+  height: calc(75vh - 56px);
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 22px;
+  opacity: 1;
+  transform: none;
+}
+.composer-toolbar {
+  display: grid;
