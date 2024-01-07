@@ -369,3 +369,56 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   width: 18px;
   height: 18px;
   stroke: currentColor;
+  stroke-width: 1.7;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-button .exit-fullscreen-icon {
+  display: none;
+}
+.icon-button[aria-pressed="true"] .enter-fullscreen-icon {
+  display: none;
+}
+.icon-button[aria-pressed="true"] .exit-fullscreen-icon {
+  display: block;
+}
+.icon-button:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+.create-secret-button {
+  min-width: 114px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.create-secret-button svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.create-secret-button:hover:not(:disabled) {
+  background: var(--surface-strong);
+}
+.decrypt-secret-button {
+  min-width: 132px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
