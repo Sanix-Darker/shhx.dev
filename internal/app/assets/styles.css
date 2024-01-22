@@ -475,3 +475,56 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   background: rgba(255, 255, 255, 0.08);
 }
 .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.secret-card {
+  display: grid;
+  gap: 18px;
+  opacity: 0;
+  transform: translateY(10px) scale(0.99);
+  transition: transform 220ms ease, opacity 220ms ease, box-shadow 180ms ease, filter 180ms ease;
+}
+.secret-card.is-staged {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+}
+.secret-card.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: secretEnter 360ms ease;
+}
+.secret-card.is-removing {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-40px) scale(0.98);
+  transition: transform 420ms ease, opacity 420ms ease, filter 420ms ease;
+  filter: blur(3px);
+}
+.secret-card:hover { transform: translateY(-2px); }
+.secret-card.is-scroll-quick {
+  transform: translateY(-3px);
+  transition-duration: 120ms;
+}
+.secret-card.is-foreground {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  width: min(760px, calc(100vw - 24px));
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  z-index: 200;
+  transform: translateX(-50%);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+}
+.foreground-close-button {
+  display: none;
+}
