@@ -528,3 +528,56 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .foreground-close-button {
   display: none;
 }
+.secret-card.is-foreground .foreground-close-button {
+  display: inline-flex;
+}
+.secret-card.is-foreground [data-focus-card] {
+  display: none;
+}
+.feed-shift-animate {
+  transition: transform 320ms ease;
+}
+.create-handoff {
+  position: fixed;
+  z-index: 65;
+  pointer-events: none;
+  border-radius: 28px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.22);
+  opacity: 0.88;
+}
+.room-head { justify-content: space-between; align-items: start; }
+.room-title-wrap {
+  min-width: 0;
+}
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-hint {
+  margin-top: 4px;
+  font-style: italic;
+}
+.secret-card summary {
+  list-style: none;
+  cursor: pointer;
+}
+.secret-card summary::-webkit-details-marker {
+  display: none;
+}
+.secret-card:not([open]) {
+  gap: 0;
+}
+.secret-card:not([open]) > :not(summary) {
+  display: none;
+}
+.status-stack { display: grid; justify-items: end; gap: 8px; }
+.card-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.owner-tools {
+  display: flex;
