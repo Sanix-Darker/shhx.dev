@@ -793,3 +793,56 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .toast-actions {
   display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+@keyframes secretEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes toastIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes toastOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secret-card,
+  .secret-card.is-removing,
+  .secret-card.is-scroll-quick,
+  button,
+  textarea,
+  .share-link-input,
+  .icon-button,
+  .card-select-bubble {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+    filter: none !important;
