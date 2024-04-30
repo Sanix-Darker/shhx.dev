@@ -899,3 +899,22 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
     height: calc(100vh - 20px);
   }
   .send-meta {
+    flex-direction: column;
+    align-items: start;
+  }
+  .composer-body .send-actions {
+    align-items: stretch;
+  }
+  .send-meta-compact {
+    gap: 8px;
+  }
+  .input-action-row {
+    grid-template-columns: minmax(86px, 30%) minmax(98px, 1fr) minmax(0, 1fr) auto auto;
+  }
+  .guest-factor-row {
+    grid-template-columns: minmax(0, 1fr) 38px;
+  }
+  .feed-composer.is-fullscreen-panel .composer-body {
+    height: calc(100vh - 76px);
+  }
+}
