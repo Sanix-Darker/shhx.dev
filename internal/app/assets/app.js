@@ -104,3 +104,56 @@ async function initIdentity() {
     let record;
     if (stored) {
       record = JSON.parse(stored);
+    } else {
+      const keyPair = await crypto.subtle.generateKey(
+        { name: "ECDSA", namedCurve: "P-256" },
+        true,
+        ["sign", "verify"],
+      );
+      const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+      const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
+      const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(JSON.stringify(publicKey)));
+      record = {
+        browserId: bytesToHex(new Uint8Array(digest)).slice(0, 16),
+        publicKey,
+        privateKey,
+      };
+      localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(record));
+    }
+    appState.identity = record;
+    statusNode.textContent = `browser id: ${record.browserId}`;
+  } catch (error) {
+    console.error(error);
+    statusNode.textContent = "browser id unavailable.";
+  }
+}
+
+async function initLocalVault() {
+  migrateLocalStorageKey(LEGACY_LOCAL_VAULT_KEY_STORAGE, LOCAL_VAULT_KEY_STORAGE);
+  const stored = localStorage.getItem(LOCAL_VAULT_KEY_STORAGE);
+  if (stored) {
+    appState.localVaultKey = await crypto.subtle.importKey(
+      "raw",
+      base64ToBytes(stored),
+      { name: "AES-GCM" },
+      false,
+      ["encrypt", "decrypt"],
+    );
+    return;
+  }
+
+  const key = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"],
+  );
+  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+  localStorage.setItem(LOCAL_VAULT_KEY_STORAGE, bytesToBase64(raw));
+  appState.localVaultKey = key;
+}
+
+function setupComposer() {
+  const button = document.querySelector("#create-secret-button");
+  const composer = document.querySelector("#composer");
+  const secretInput = document.querySelector("#create-secret-input");
+  const hintInput = document.querySelector("#create-hint-input");
