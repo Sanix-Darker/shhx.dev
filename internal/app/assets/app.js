@@ -210,3 +210,56 @@ function setupComposer() {
   });
   totpButton.addEventListener("click", () => {
     totpToggle.checked = !totpToggle.checked;
+    sync();
+  });
+  totpToggle.addEventListener("change", sync);
+  ttlSelect.addEventListener("change", sync);
+  collapseButton?.addEventListener("click", () => {
+    if (appState.composerCollapseController) {
+      appState.composerCollapseController(true);
+    }
+  });
+  fullscreenButton.addEventListener("click", () => {
+    toggleEditorFullscreen(composer);
+  });
+  passphraseVisibilityButton.addEventListener("click", () => {
+    toggleSensitiveInput(passphraseInput, passphraseVisibilityButton, "passphrase");
+  });
+  passphraseCopyButton.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(passphraseInput.value);
+      updateComposerNote("Passphrase copied.");
+    } catch (_error) {
+      updateComposerNote("Passphrase copy failed.");
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeActiveUI();
+    }
+  });
+  if (params.get("compose") === "1") {
+    if (composer) {
+      composer.open = true;
+    }
+    history.replaceState(null, "", "/");
+  }
+  syncFullscreenButtonState(false);
+  sync();
+}
+
+async function autoJoinSharedLink() {
+  const shareCode = document.body.dataset.shareCode;
+  if (!shareCode) {
+    return;
+  }
+
+  document.body.classList.add("is-guest-view");
+  const composer = document.querySelector("#composer");
+  if (composer) {
+    composer.hidden = true;
+  }
+  const guestCreateWrap = document.querySelector("#guest-create-wrap");
+  const guestCreateButton = document.querySelector("#guest-create-button");
+  if (guestCreateWrap && guestCreateButton) {
+    guestCreateWrap.hidden = false;
