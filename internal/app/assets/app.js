@@ -157,3 +157,56 @@ function setupComposer() {
   const composer = document.querySelector("#composer");
   const secretInput = document.querySelector("#create-secret-input");
   const hintInput = document.querySelector("#create-hint-input");
+  const passphraseInput = document.querySelector("#create-passphrase-input");
+  const totpToggle = document.querySelector("#create-totp-toggle");
+  const burnToggle = document.querySelector("#create-burn-toggle");
+  const burnButton = document.querySelector("#create-burn-button");
+  const totpButton = document.querySelector("#create-totp-button");
+  const ttlSelect = document.querySelector("#create-ttl-select");
+  const collapseButton = document.querySelector("#composer-collapse-button");
+  const fullscreenButton = document.querySelector("#editor-fullscreen-button");
+  const gutter = document.querySelector("#secret-editor-gutter");
+  const passphraseVisibilityButton = document.querySelector("#create-passphrase-visibility");
+  const passphraseCopyButton = document.querySelector("#create-passphrase-copy");
+  const params = new URLSearchParams(window.location.search);
+
+  const sync = () => {
+    button.disabled = !secretInput.value.trim();
+    hintInput.maxLength = MAX_HINT_LENGTH;
+    passphraseInput.disabled = totpToggle.checked;
+    passphraseVisibilityButton.disabled = totpToggle.checked;
+    passphraseCopyButton.disabled = totpToggle.checked;
+    passphraseInput.placeholder = totpToggle.checked
+      ? "Disabled while authenticator mode is on"
+      : "Add a passphrase for extra safety";
+    if (totpToggle.checked) {
+      passphraseInput.type = "password";
+      syncSensitiveButtonLabel(passphraseVisibilityButton, "Show passphrase");
+    }
+    syncComposerToggleButton(
+      burnButton,
+      burnToggle.checked,
+      "Delete on read is on",
+      "Delete on read is off",
+    );
+    syncComposerToggleButton(
+      totpButton,
+      totpToggle.checked,
+      "Authenticator mode is on",
+      "Authenticator mode is off",
+    );
+    syncEditorGutter(secretInput, gutter);
+  };
+
+  button.addEventListener("click", () => createSecret());
+  secretInput.addEventListener("input", sync);
+  secretInput.addEventListener("scroll", () => {
+    gutter.scrollTop = secretInput.scrollTop;
+  });
+  passphraseInput.addEventListener("input", sync);
+  burnButton.addEventListener("click", () => {
+    burnToggle.checked = !burnToggle.checked;
+    sync();
+  });
+  totpButton.addEventListener("click", () => {
+    totpToggle.checked = !totpToggle.checked;
