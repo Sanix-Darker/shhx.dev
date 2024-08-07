@@ -263,3 +263,56 @@ async function autoJoinSharedLink() {
   const guestCreateButton = document.querySelector("#guest-create-button");
   if (guestCreateWrap && guestCreateButton) {
     guestCreateWrap.hidden = false;
+    guestCreateButton.addEventListener("click", () => {
+      window.location.href = "/?compose=1";
+    });
+  }
+  updateComposerNote("Opening shared secret.");
+
+  const response = await fetch("/ui/rooms/join", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: new URLSearchParams({
+      display_name: "Peer",
+      room_code: shareCode,
+    }),
+  });
+
+  if (!response.ok) {
+    showMissingSharedSecret(response.status, shareCode);
+    return;
+  }
+
+  const html = await response.text();
+  const node = insertCardHTML(html);
+  bootstrapSession(node);
+}
+
+function showMissingSharedSecret(status, shareCode) {
+  const empty = document.querySelector("#empty-feed");
+  if (empty) {
+    empty.hidden = false;
+    const eyebrow = empty.querySelector(".eyebrow");
+    const note = empty.querySelector(".signal-note");
+    if (eyebrow) {
+      eyebrow.textContent = "secret";
+    }
+    if (note) {
+      note.textContent = status === 404
+        ? `No secret was found for "${shareCode}".`
+        : status === 409
+          ? `The secret "${shareCode}" is not available right now.`
+          : `The secret "${shareCode}" could not be opened.`;
+    }
+  }
+  showToast(
+    status === 404
+      ? `Secret ${shareCode} was not found.`
+      : `Secret ${shareCode} could not be opened.`,
+  );
+}
+
+async function createSecret() {
+  const secretInput = document.querySelector("#create-secret-input");
+  const hintInput = document.querySelector("#create-hint-input");
+  const passphraseInput = document.querySelector("#create-passphrase-input");
