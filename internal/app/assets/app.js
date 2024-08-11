@@ -316,3 +316,56 @@ async function createSecret() {
   const secretInput = document.querySelector("#create-secret-input");
   const hintInput = document.querySelector("#create-hint-input");
   const passphraseInput = document.querySelector("#create-passphrase-input");
+  const totpToggle = document.querySelector("#create-totp-toggle");
+  const ttlSelect = document.querySelector("#create-ttl-select");
+  const burn = document.querySelector("#create-burn-toggle").checked;
+  const plaintext = secretInput.value.trim();
+  const hint = hintInput.value.trim();
+  const passphrase = passphraseInput.value.trim();
+  const useTOTP = totpToggle.checked;
+  const ttlSeconds = ttlSelect.selectedIndex === 0 ? null : parseTTLSelection(ttlSelect.value);
+
+  if (!plaintext) {
+    return;
+  }
+  if (plaintext.length > MAX_SECRET_LENGTH || passphrase.length > MAX_PASSPHRASE_LENGTH || hint.length > MAX_HINT_LENGTH) {
+    updateComposerNote("Input is too large.");
+    return;
+  }
+
+  const localSecret = await encryptLocalValue(plaintext);
+  const localPassphrase = !useTOTP && passphrase ? await encryptLocalValue(passphrase) : null;
+  const localTOTPSecret = useTOTP ? await encryptLocalValue(generateTOTPSecret()) : null;
+  const previousPositions = captureFeedPositions();
+  const pendingSecret = {
+    id: crypto.randomUUID(),
+    burnAfterRead: burn,
+    hint,
+    searchPlaintext: plaintext,
+    localSecret,
+    localPassphrase,
+    localTOTPSecret,
+    authMode: useTOTP ? "totp" : (passphrase ? "passphrase" : "none"),
+    createdAt: Date.now(),
+    expiresAt: ttlSeconds === null ? null : Date.now() + (ttlSeconds * 1000),
+    active: true,
+    sent: false,
+  };
+  secretInput.value = "";
+  hintInput.value = "";
+  passphraseInput.value = "";
+  totpToggle.checked = false;
+  ttlSelect.value = "";
+  ttlSelect.selectedIndex = 0;
+  document.querySelector("#create-secret-button").disabled = true;
+  showToast("Secret created locally. Waiting for network to publish the live link.", {
+    action: null,
+  });
+  syncEditorGutter(secretInput, document.querySelector("#secret-editor-gutter"));
+
+  try {
+    const response = await fetch("/ui/rooms/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({ display_name: "Sender" }),
+    });
