@@ -369,3 +369,56 @@ async function createSecret() {
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
       body: new URLSearchParams({ display_name: "Sender" }),
     });
+    if (!response.ok) {
+      throw new Error(`create room failed: ${response.status}`);
+    }
+
+    const html = await response.text();
+    const node = insertCardHTML(html, { staged: true });
+    const session = bootstrapSession(node);
+    session.pendingSecret = pendingSecret;
+    hydrateOwnerCard(session);
+    persistLocalSecret(session.pendingSecret);
+    showToast("Secret created. Share the link while you stay online.", {
+      action: {
+        label: "Show secret",
+        onClick: () => focusSessionCard(session),
+      },
+    });
+    await playSecretCreateAnimation(node, previousPositions);
+    return;
+  } catch (_error) {
+    const provisionalRoomCode = randomLocalRoomCode();
+    const provisionalPeerID = randomLocalPeerID();
+    const node = insertCardHTML(buildPendingOwnerCardHTML(provisionalRoomCode, provisionalPeerID), { staged: true });
+    const session = bootstrapSession(node, { deferStart: true, provisional: true });
+    session.pendingSecret = pendingSecret;
+    persistLocalSecret(session.pendingSecret);
+    hydrateOwnerCard(session);
+    updateStatus(session, "offline", "waiting");
+    showToast("Network issue. Secret saved locally and will retry publishing.", {
+      action: {
+        label: "Show secret",
+        onClick: () => focusSessionCard(session),
+      },
+    });
+    void provisionOwnerSession(session);
+    await playSecretCreateAnimation(node, previousPositions);
+  }
+}
+
+function randomLocalRoomCode() {
+  return `LOCAL-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
+function randomLocalPeerID() {
+  return `LOCAL${Math.random().toString(36).slice(2, 14).toUpperCase()}`;
+}
+
+function buildPendingOwnerCardHTML(roomCode, peerID) {
+  return `
+<details
+  class="room-bubble secret-card"
+  data-room-code="${escapeHTML(roomCode)}"
+  data-role="owner"
+  data-peer-id="${escapeHTML(peerID)}"
