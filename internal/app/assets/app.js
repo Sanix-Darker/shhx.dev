@@ -422,3 +422,56 @@ function buildPendingOwnerCardHTML(roomCode, peerID) {
   data-room-code="${escapeHTML(roomCode)}"
   data-role="owner"
   data-peer-id="${escapeHTML(peerID)}"
+  data-display-name="Sender"
+  data-provisional="true"
+  open
+>
+  <summary class="room-head" title="Click to open or close">
+    <div class="room-title-wrap">
+      <p class="eyebrow">secret</p>
+      <div class="title-row">
+        <h2 data-card-title>s: ${escapeHTML(roomCode)}</h2>
+        <span class="ttl-mark" data-ttl-mark hidden title="This secret has a TTL" aria-label="This secret has a TTL">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="8"></circle>
+            <path d="M12 7v5l3 2"></path>
+          </svg>
+        </span>
+      </div>
+      <p class="fine-print card-hint" data-card-hint hidden></p>
+      <p class="fine-print" data-created-at hidden></p>
+    </div>
+    <div class="status-stack">
+      <div class="card-tools" data-card-tools>
+        <button class="icon-button" type="button" data-focus-card aria-label="Show secret in foreground" title="Show secret in foreground">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 4H4v5"></path><path d="M15 4h5v5"></path><path d="M20 15v5h-5"></path><path d="M4 15v5h5"></path>
+          </svg>
+          <span class="sr-only">Show secret in foreground</span>
+        </button>
+        <button class="icon-button foreground-close-button" type="button" data-unfocus-card aria-label="Exit foreground secret view" title="Exit foreground secret view">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M6 6l12 12"></path><path d="M18 6 6 18"></path>
+          </svg>
+          <span class="sr-only">Exit foreground secret view</span>
+        </button>
+        <div class="owner-only card-tools owner-tools">
+          <label class="card-select" title="Select secret">
+            <input type="checkbox" data-select-card aria-label="Select secret">
+            <span class="card-select-bubble" aria-hidden="true"></span>
+          </label>
+          <button class="icon-button" type="button" data-copy-link aria-label="Copy share link" title="Copy share link">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+              <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="sr-only">Copy share link</span>
+          </button>
+          <button class="icon-button auth-copy-button" type="button" data-copy-totp-secret aria-label="Copy authenticator secret" title="Copy authenticator secret" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="9" y="9" width="10" height="10" rx="2"></rect>
+              <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span class="sr-only">Copy authenticator secret</span>
+          </button>
+          <button class="icon-button" type="button" data-email-link aria-label="Send share link by email" title="Send share link by email">
