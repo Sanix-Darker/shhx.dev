@@ -475,3 +475,56 @@ function buildPendingOwnerCardHTML(roomCode, peerID) {
             <span class="sr-only">Copy authenticator secret</span>
           </button>
           <button class="icon-button" type="button" data-email-link aria-label="Send share link by email" title="Send share link by email">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m5 8 7 5 7-5"></path>
+            </svg>
+            <span class="sr-only">Send share link by email</span>
+          </button>
+          <button class="icon-button" type="button" data-toggle-secret aria-label="Turn off secret" title="Turn off secret">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 3v8"></path><path d="M7.5 6.75a7 7 0 1 0 9 0"></path>
+            </svg>
+            <span class="sr-only">Turn off secret</span>
+          </button>
+          <button class="icon-button danger-button" type="button" data-delete-secret aria-label="Delete secret" title="Delete secret">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M4 7h16"></path><path d="M9 7V4h6v3"></path><path d="M7 7l1 12h8l1-12"></path><path d="M10 11v5"></path><path d="M14 11v5"></path>
+            </svg>
+            <span class="sr-only">Delete secret</span>
+          </button>
+        </div>
+      </div>
+      <span class="status-pill" data-room-status>offline</span>
+    </div>
+  </summary>
+  <section class="room-panel secret-preview">
+    <p class="fine-print" data-secret-meta>Saved locally. Waiting for network to publish the live link.</p>
+    <pre class="plaintext" data-secret-plaintext hidden></pre>
+    <div class="ciphertext" data-secret-placeholder>Encrypted payload ready.</div>
+    <div class="secret-actions" data-secret-actions></div>
+  </section>
+</details>`;
+}
+
+function escapeHTML(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;");
+}
+
+function insertCardHTML(html, options = {}) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html.trim();
+  const node = wrapper.firstElementChild;
+  collapseFeedCards();
+  node.open = true;
+  if (options.staged) {
+    node.classList.add("is-staged");
+  }
+  document.querySelector("#feed").prepend(node);
+  syncFeedEmptyState();
+  applyFeedFilter();
+  if (!options.staged) {
+    requestAnimationFrame(() => node.classList.add("is-visible"));
