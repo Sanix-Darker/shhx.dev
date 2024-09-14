@@ -528,3 +528,56 @@ function insertCardHTML(html, options = {}) {
   applyFeedFilter();
   if (!options.staged) {
     requestAnimationFrame(() => node.classList.add("is-visible"));
+  }
+  return node;
+}
+
+function collapseFeedCards() {
+  document.querySelectorAll("#feed .secret-card").forEach((card) => {
+    card.open = false;
+  });
+}
+
+function captureFeedPositions() {
+  const positions = new Map();
+  document.querySelectorAll("#feed .secret-card").forEach((card) => {
+    positions.set(card.dataset.roomCode, card.getBoundingClientRect());
+  });
+  return positions;
+}
+
+async function playSecretCreateAnimation(node, previousPositions) {
+  animateFeedReflow(previousPositions, node.dataset.roomCode);
+  if (prefersReducedMotion.matches) {
+    node.classList.remove("is-staged");
+    node.classList.add("is-visible");
+    return;
+  }
+
+  await animateComposerHandoff(node);
+  node.classList.remove("is-staged");
+  requestAnimationFrame(() => node.classList.add("is-visible"));
+}
+
+function animateFeedReflow(previousPositions, newRoomCode) {
+  document.querySelectorAll("#feed .secret-card").forEach((card) => {
+    if (card.dataset.roomCode === newRoomCode) {
+      return;
+    }
+    const previous = previousPositions.get(card.dataset.roomCode);
+    if (!previous) {
+      return;
+    }
+    const current = card.getBoundingClientRect();
+    const deltaY = previous.top - current.top;
+    if (Math.abs(deltaY) < 1) {
+      return;
+    }
+    card.classList.add("feed-shift-animate");
+    card.style.transform = `translateY(${deltaY}px)`;
+    requestAnimationFrame(() => {
+      card.style.transform = "";
+    });
+    window.setTimeout(() => {
+      card.classList.remove("feed-shift-animate");
+      card.style.transform = "";
