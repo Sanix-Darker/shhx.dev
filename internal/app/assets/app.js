@@ -581,3 +581,56 @@ function animateFeedReflow(previousPositions, newRoomCode) {
     window.setTimeout(() => {
       card.classList.remove("feed-shift-animate");
       card.style.transform = "";
+    }, 340);
+  });
+}
+
+function animateComposerHandoff(node) {
+  const composer = document.querySelector("#composer");
+  const summary = composer?.querySelector("summary");
+  if (!composer || !summary) {
+    return Promise.resolve();
+  }
+
+  const startRect = composer.getBoundingClientRect();
+  const endRect = node.getBoundingClientRect();
+  const ghost = document.createElement("div");
+  ghost.className = "create-handoff";
+  ghost.style.left = `${startRect.left}px`;
+  ghost.style.top = `${startRect.top}px`;
+  ghost.style.width = `${startRect.width}px`;
+  ghost.style.height = `${Math.max(summary.getBoundingClientRect().height + 110, 148)}px`;
+  document.body.appendChild(ghost);
+
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      ghost.animate([
+        {
+          transform: "translate3d(0, 0, 0) scale(1)",
+          opacity: 0.88,
+          filter: "blur(0px)",
+        },
+        {
+          transform: `translate3d(${(endRect.left - startRect.left) * 0.08}px, ${(endRect.top - startRect.top) * 0.52}px, 0) scale(0.97)`,
+          opacity: 0.52,
+          filter: "blur(1px)",
+        },
+        {
+          transform: `translate3d(${endRect.left - startRect.left}px, ${endRect.top - startRect.top + 24}px, 0) scale(0.92)`,
+          opacity: 0,
+          filter: "blur(3px)",
+        },
+      ], {
+        duration: 420,
+        easing: "cubic-bezier(0.2, 0.78, 0.18, 1)",
+        fill: "forwards",
+      }).finished.finally(() => {
+        ghost.remove();
+        resolve();
+      });
+    });
+  });
+}
+
+function bootstrapSession(node, options = {}) {
+  const roomCode = node.dataset.roomCode;
