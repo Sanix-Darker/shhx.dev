@@ -634,3 +634,56 @@ function animateComposerHandoff(node) {
 
 function bootstrapSession(node, options = {}) {
   const roomCode = node.dataset.roomCode;
+  if (appState.sessions.has(roomCode)) {
+    return appState.sessions.get(roomCode);
+  }
+
+  const session = {
+    roomCode,
+    peerId: node.dataset.peerId,
+    role: node.dataset.role,
+    node,
+    pendingSecret: null,
+    receivedSecret: null,
+    roomKeyPair: null,
+    baseKeyBytes: null,
+    rtc: null,
+    channel: null,
+    eventSource: null,
+    remotePeerId: null,
+    isConnected: false,
+    offerReady: false,
+    readySent: false,
+    selected: false,
+    provisional: options.provisional === true || node.dataset.provisional === "true",
+    provisionAttempts: 0,
+    provisionTimer: null,
+    isDeleted: false,
+  };
+
+  appState.sessions.set(roomCode, session);
+  syncCardSearchIndex(session);
+  wireSessionUI(session);
+  if (!options.deferStart && !session.provisional) {
+    startSession(session).catch((error) => {
+      console.error(error);
+      updateSessionNote(session, "Session failed.");
+      updateStatus(session, "failed", "waiting");
+    });
+  }
+  return session;
+}
+
+async function restoreLocalSecrets() {
+  const stored = readStoredSecrets();
+  if (stored.length === 0) {
+    return;
+  }
+
+  for (const record of [...stored].reverse()) {
+    if (record.expiresAt && record.expiresAt <= Date.now()) {
+      removeLocalSecret(record.id);
+      continue;
+    }
+
+    const response = await fetch("/ui/rooms/create", {
