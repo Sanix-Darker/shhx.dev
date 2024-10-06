@@ -687,3 +687,56 @@ async function restoreLocalSecrets() {
     }
 
     const response = await fetch("/ui/rooms/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({ display_name: "Sender" }),
+    });
+    if (!response.ok) {
+      continue;
+    }
+
+    const html = await response.text();
+    const node = insertCardHTML(html);
+    const session = bootstrapSession(node);
+    const restoredPlaintext = await decryptLocalValue(record.localSecret);
+    session.pendingSecret = {
+      ...record,
+      searchPlaintext: restoredPlaintext,
+      createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
+      expiresAt: normalizeExpiresAt(record.expiresAt),
+      sent: false,
+    };
+    hydrateOwnerCard(session);
+  }
+
+  showToast("Restored local secrets from this browser.");
+}
+
+async function provisionOwnerSession(session) {
+  if (!session || session.isDeleted || !session.provisional) {
+    return;
+  }
+
+  session.provisionAttempts += 1;
+  try {
+    const response = await fetch("/ui/rooms/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({ display_name: "Sender" }),
+    });
+    if (!response.ok) {
+      throw new Error(`create room failed: ${response.status}`);
+    }
+
+    const html = await response.text();
+    attachProvisionedOwnerCard(session, html);
+    session.provisional = false;
+    session.provisionAttempts = 0;
+    updateStatus(session, session.pendingSecret?.active === false ? "off" : "waiting", "waiting");
+    hydrateOwnerCard(session);
+    startSession(session).catch((error) => {
+      console.error(error);
+      updateStatus(session, "failed", "waiting");
+      scheduleProvisionRetry(session);
+    });
+    showToast("Live link published.");
