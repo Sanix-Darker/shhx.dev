@@ -899,3 +899,56 @@ function hydrateOwnerCard(session) {
       ? "Secret hidden locally. Waiting for network recovery."
       : "Secret hidden locally. Share the link to deliver it.",
   );
+  const totpCopyButton = node.querySelector("[data-copy-totp-secret]");
+  if (totpCopyButton) {
+    totpCopyButton.hidden = !(pendingSecret.authMode === "totp" && pendingSecret.localTOTPSecret);
+  }
+  syncCreatedAt(session);
+  syncTTLMark(session);
+  syncCardSearchIndex(session);
+  syncOwnerControls(session);
+  syncBulkActions();
+  scheduleSecretExpiry(session);
+  ensureRelativeTimeTicker();
+  applyFeedFilter();
+}
+
+function syncOwnerControls(session) {
+  const toggle = session.node.querySelector("[data-toggle-secret]");
+  if (!toggle) {
+    return;
+  }
+  const isActive = session.pendingSecret?.active !== false;
+  toggle.title = isActive ? "Turn off secret" : "Turn on secret";
+  toggle.setAttribute("aria-label", toggle.title);
+  toggle.setAttribute("aria-pressed", String(!isActive));
+}
+
+async function startSession(session) {
+  session.roomKeyPair = await crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    true,
+    ["deriveBits"],
+  );
+
+  updateSessionNote(session, session.role === "owner" ? "Keep this page open while the other person reads it." : "Waiting for sender.");
+  const eventsURL = `/api/rooms/${encodeURIComponent(session.roomCode)}/events?peer=${encodeURIComponent(session.peerId)}`;
+  session.eventSource = new EventSource(eventsURL);
+  session.eventSource.onmessage = async (event) => {
+    await handleServerEvent(session, JSON.parse(event.data));
+  };
+  session.eventSource.onerror = () => {
+    updateStatus(session, "offline", "waiting");
+    updateSessionNote(session, "Connection interrupted. Retrying.");
+  };
+}
+
+async function handleServerEvent(session, event) {
+  switch (event.type) {
+    case "room-state":
+      syncRemotePeer(session, event.data);
+      await ensurePeerConnection(session);
+      await notifyReady(session);
+      await maybeCreateOffer(session);
+      break;
+    case "peer-joined":
