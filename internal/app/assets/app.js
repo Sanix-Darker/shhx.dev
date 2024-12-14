@@ -793,3 +793,56 @@ function wireSessionUI(session) {
   };
   session.node.querySelectorAll("[data-card-tools] button").forEach((node) => {
     node.addEventListener("click", stopSummaryToggle);
+    node.addEventListener("mousedown", (event) => event.stopPropagation());
+  });
+  session.node.querySelectorAll("[data-card-tools] input").forEach((node) => {
+    node.addEventListener("click", (event) => event.stopPropagation());
+    node.addEventListener("mousedown", (event) => event.stopPropagation());
+  });
+  session.node.querySelector("[data-focus-card]").addEventListener("click", (event) => {
+    stopSummaryToggle(event);
+    focusSessionCard(session);
+  });
+  session.node.querySelector("[data-unfocus-card]").addEventListener("click", (event) => {
+    stopSummaryToggle(event);
+    unfocusSessionCard(session);
+  });
+
+  const factorInput = session.node.querySelector("[data-otp-input]");
+  const factorVisibility = session.node.querySelector("[data-factor-visibility]");
+  if (factorInput && factorVisibility) {
+    factorVisibility.addEventListener("click", () => {
+      toggleSensitiveInput(factorInput, factorVisibility, "passphrase");
+    });
+  }
+
+  if (session.role !== "owner") {
+    return;
+  }
+
+  session.node.querySelector("[data-copy-link]").addEventListener("click", async (event) => {
+    stopSummaryToggle(event);
+    if (session.provisional) {
+      showToast("Link is still offline. Waiting for network.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shareLinkFor(session.roomCode));
+      showToast("Share link copied.", {
+        action: {
+          label: "Show secret",
+          onClick: () => focusSessionCard(session),
+        },
+      });
+    } catch (_error) {
+      showToast("Copy failed.");
+    }
+  });
+  session.node.querySelector("[data-email-link]").addEventListener("click", (event) => {
+    stopSummaryToggle(event);
+    if (session.provisional) {
+      showToast("Link is still offline. Waiting for network.");
+      return;
+    }
+    window.location.href = mailtoLinkFor([shareLinkFor(session.roomCode)]);
+  });
