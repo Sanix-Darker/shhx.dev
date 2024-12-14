@@ -740,3 +740,56 @@ async function provisionOwnerSession(session) {
       scheduleProvisionRetry(session);
     });
     showToast("Live link published.");
+  } catch (_error) {
+    updateStatus(session, "offline", "waiting");
+    scheduleProvisionRetry(session);
+  }
+}
+
+function scheduleProvisionRetry(session) {
+  if (!session || session.isDeleted || !session.provisional) {
+    return;
+  }
+  if (session.provisionTimer) {
+    window.clearTimeout(session.provisionTimer);
+  }
+  const delay = Math.min(30000, 1000 * (2 ** Math.min(session.provisionAttempts, 5)));
+  session.provisionTimer = window.setTimeout(() => {
+    session.provisionTimer = null;
+    void provisionOwnerSession(session);
+  }, delay);
+}
+
+function attachProvisionedOwnerCard(session, html) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html.trim();
+  const node = wrapper.firstElementChild;
+  if (!node) {
+    throw new Error("missing provisioned card");
+  }
+
+  node.open = session.node.open;
+  session.node.replaceWith(node);
+  const previousKey = session.roomCode;
+  session.roomCode = node.dataset.roomCode;
+  session.peerId = node.dataset.peerId;
+  session.role = node.dataset.role;
+  session.node = node;
+  session.eventSource?.close();
+  session.eventSource = null;
+  session.readySent = false;
+  session.offerReady = false;
+  appState.sessions.delete(previousKey);
+  appState.sessions.set(session.roomCode, session);
+  syncCardSearchIndex(session);
+  wireSessionUI(session);
+  applyFeedFilter();
+}
+
+function wireSessionUI(session) {
+  const stopSummaryToggle = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  session.node.querySelectorAll("[data-card-tools] button").forEach((node) => {
+    node.addEventListener("click", stopSummaryToggle);
