@@ -846,3 +846,56 @@ function wireSessionUI(session) {
     }
     window.location.href = mailtoLinkFor([shareLinkFor(session.roomCode)]);
   });
+  session.node.querySelector("[data-toggle-secret]").addEventListener("click", (event) => {
+    stopSummaryToggle(event);
+    toggleSecret(session);
+  });
+  session.node.querySelector("[data-delete-secret]").addEventListener("click", async (event) => {
+    stopSummaryToggle(event);
+    await deleteSecret(session);
+  });
+  session.node.querySelector("[data-select-card]").addEventListener("change", (event) => {
+    session.selected = event.target.checked;
+    session.node.classList.toggle("is-selected", session.selected);
+    syncBulkActions();
+  });
+
+  const copyTOTP = session.node.querySelector("[data-copy-totp-secret]");
+  if (copyTOTP) {
+    copyTOTP.addEventListener("click", async () => {
+      try {
+        const secret = session.pendingSecret?.localTOTPSecret
+          ? await decryptLocalValue(session.pendingSecret.localTOTPSecret)
+          : "";
+        await navigator.clipboard.writeText(secret);
+        showToast("Authenticator secret copied.");
+      } catch (_error) {
+        showToast("Copy failed.");
+      }
+    });
+  }
+}
+
+function hydrateOwnerCard(session) {
+  const { pendingSecret, node } = session;
+  const hintNode = node.querySelector("[data-card-hint]");
+  const normalizedHint = String(pendingSecret.hint || "").trim();
+  if (hintNode) {
+    hintNode.hidden = !normalizedHint;
+    hintNode.textContent = normalizedHint ? `"${normalizedHint}"` : "";
+  }
+  node.querySelector("[data-secret-meta]").textContent = session.provisional
+    ? "Saved locally. Waiting for network to publish the live link."
+    : pendingSecret.authMode === "totp"
+      ? pendingSecret.burnAfterRead ? "Authenticator code required. Will delete on read." : "Authenticator code required."
+      : pendingSecret.authMode === "passphrase"
+        ? pendingSecret.burnAfterRead ? "Passphrase required. Will delete on read." : "Passphrase required."
+        : pendingSecret.burnAfterRead ? "Will delete on read." : "Stays until you remove it.";
+  node.querySelector("[data-secret-plaintext]").hidden = true;
+  node.querySelector("[data-secret-placeholder]").hidden = false;
+  setAnimatedText(
+    node.querySelector("[data-secret-placeholder]"),
+    session.provisional
+      ? "Secret hidden locally. Waiting for network recovery."
+      : "Secret hidden locally. Share the link to deliver it.",
+  );
