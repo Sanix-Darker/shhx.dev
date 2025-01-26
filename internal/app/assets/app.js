@@ -952,3 +952,56 @@ async function handleServerEvent(session, event) {
       await maybeCreateOffer(session);
       break;
     case "peer-joined":
+      session.remotePeerId = event.data.id;
+      updateStatus(session, "linking", "readying");
+      updateSessionNote(session, "Peer found. Building direct channel.");
+      await ensurePeerConnection(session);
+      await maybeCreateOffer(session);
+      break;
+    case "peer-left":
+      session.remotePeerId = null;
+      resetPeerLink(session);
+      updateStatus(session, "waiting", "waiting");
+      updateSessionNote(session, "Peer left.");
+      break;
+    case "signal":
+      await handleSignal(session, event.data);
+      break;
+    default:
+      break;
+  }
+}
+
+function syncRemotePeer(session, peers) {
+  const remote = peers.find((peer) => peer.id !== session.peerId);
+  session.remotePeerId = remote ? remote.id : null;
+  if (remote) {
+    updateStatus(session, "linking", "readying");
+    updateSessionNote(session, "Peer found. Building direct channel.");
+  } else {
+    updateStatus(session, "waiting", "waiting");
+    updateSessionNote(session, session.role === "owner" ? "Waiting for someone to open the link." : "Waiting for sender.");
+  }
+}
+
+async function ensurePeerConnection(session) {
+  if (!session.remotePeerId || session.rtc) {
+    return;
+  }
+
+  session.rtc = new RTCPeerConnection({ iceServers: stunServers });
+  session.rtc.onicecandidate = ({ candidate }) => {
+    if (!candidate) {
+      return;
+    }
+    postSignal(session, {
+      from: session.peerId,
+      to: session.remotePeerId,
+      type: "candidate",
+      payload: candidate,
+    });
+  };
+  session.rtc.onconnectionstatechange = () => {
+    const state = session.rtc.connectionState;
+    if (state === "connected") {
+      session.isConnected = true;
