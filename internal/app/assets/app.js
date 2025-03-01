@@ -1111,3 +1111,56 @@ async function handleOffer(session, signal) {
   await session.rtc.setLocalDescription(answer);
   const pubJwk = await crypto.subtle.exportKey("jwk", session.roomKeyPair.publicKey);
   await postSignal(session, {
+    from: session.peerId,
+    to: signal.from,
+    type: "answer",
+    payload: {
+      sdp: session.rtc.localDescription,
+      sessionPublicKey: pubJwk,
+    },
+  });
+}
+
+async function handleAnswer(session, signal) {
+  await session.rtc.setRemoteDescription(signal.payload.sdp);
+  await deriveBaseKey(session, signal.payload.sessionPublicKey);
+  flushPendingSecret(session);
+}
+
+async function deriveBaseKey(session, remotePublicJwk) {
+  if (session.baseKeyBytes) {
+    return;
+  }
+  const remotePublicKey = await crypto.subtle.importKey(
+    "jwk",
+    remotePublicJwk,
+    { name: "ECDH", namedCurve: "P-256" },
+    true,
+    [],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "ECDH", public: remotePublicKey },
+    session.roomKeyPair.privateKey,
+    256,
+  );
+  const digest = await crypto.subtle.digest("SHA-256", bits);
+  session.baseKeyBytes = new Uint8Array(digest);
+}
+
+async function derivePayloadKey(session, otp) {
+  const otpBytes = textEncoder.encode(otp || "");
+  const combined = new Uint8Array(session.baseKeyBytes.length + otpBytes.length);
+  combined.set(session.baseKeyBytes, 0);
+  combined.set(otpBytes, session.baseKeyBytes.length);
+  const digest = await crypto.subtle.digest("SHA-256", combined);
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function postSignal(session, payload) {
+  try {
+    const response = await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/signal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
