@@ -1005,3 +1005,56 @@ async function ensurePeerConnection(session) {
     const state = session.rtc.connectionState;
     if (state === "connected") {
       session.isConnected = true;
+      updateStatus(session, "connected", "connected");
+      updateSessionNote(session, "Live encrypted link ready.");
+      notifySecretConnected(session);
+      flushPendingSecret(session);
+    } else if (state === "failed" || state === "disconnected" || state === "closed") {
+      session.isConnected = false;
+      updateStatus(session, "waiting", "waiting");
+    }
+  };
+  session.rtc.ondatachannel = (event) => bindDataChannel(session, event.channel);
+}
+
+async function maybeCreateOffer(session) {
+  if (session.role !== "owner" || !session.offerReady || !session.rtc || session.rtc.localDescription) {
+    return;
+  }
+  bindDataChannel(session, session.rtc.createDataChannel("shhx"));
+  const offer = await session.rtc.createOffer();
+  await session.rtc.setLocalDescription(offer);
+  const pubJwk = await crypto.subtle.exportKey("jwk", session.roomKeyPair.publicKey);
+  await postSignal(session, {
+    from: session.peerId,
+    to: session.remotePeerId,
+    type: "offer",
+    payload: {
+      sdp: session.rtc.localDescription,
+      sessionPublicKey: pubJwk,
+    },
+  });
+}
+
+async function notifyReady(session) {
+  if (session.role !== "guest" || !session.remotePeerId || session.readySent) {
+    return;
+  }
+  session.readySent = true;
+  await postSignal(session, {
+    from: session.peerId,
+    to: session.remotePeerId,
+    type: "ready",
+    payload: {},
+  });
+}
+
+function bindDataChannel(session, channel) {
+  session.channel = channel;
+  channel.onopen = () => {
+    session.isConnected = true;
+    updateStatus(session, "connected", "connected");
+    updateSessionNote(session, "Live encrypted link ready.");
+    notifySecretConnected(session);
+    if (session.role === "owner" && session.pendingSecret && !session.pendingSecret.active) {
+      sendUnavailable(session);
