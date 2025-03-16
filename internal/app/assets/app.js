@@ -1058,3 +1058,56 @@ function bindDataChannel(session, channel) {
     notifySecretConnected(session);
     if (session.role === "owner" && session.pendingSecret && !session.pendingSecret.active) {
       sendUnavailable(session);
+      return;
+    }
+    flushPendingSecret(session);
+  };
+  channel.onclose = () => {
+    session.isConnected = false;
+    updateStatus(session, "waiting", "waiting");
+    updateSessionNote(session, "Live link closed.");
+  };
+  channel.onmessage = async (event) => {
+    await handlePeerMessage(session, JSON.parse(event.data));
+  };
+}
+
+async function handleSignal(session, signal) {
+  if (signal.to && signal.to !== session.peerId) {
+    return;
+  }
+
+  switch (signal.type) {
+    case "offer":
+      await handleOffer(session, signal);
+      break;
+    case "answer":
+      await handleAnswer(session, signal);
+      break;
+    case "ready":
+      session.remotePeerId = signal.from;
+      session.offerReady = true;
+      await ensurePeerConnection(session);
+      await maybeCreateOffer(session);
+      break;
+    case "candidate":
+      if (session.rtc) {
+        await session.rtc.addIceCandidate(signal.payload);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+async function handleOffer(session, signal) {
+  session.remotePeerId = signal.from;
+  if (!session.rtc) {
+    await ensurePeerConnection(session);
+  }
+  await session.rtc.setRemoteDescription(signal.payload.sdp);
+  await deriveBaseKey(session, signal.payload.sessionPublicKey);
+  const answer = await session.rtc.createAnswer();
+  await session.rtc.setLocalDescription(answer);
+  const pubJwk = await crypto.subtle.exportKey("jwk", session.roomKeyPair.publicKey);
+  await postSignal(session, {
