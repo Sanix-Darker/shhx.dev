@@ -1164,3 +1164,56 @@ async function postSignal(session, payload) {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
+      throw new Error(`signal failed: ${response.status}`);
+    }
+    return true;
+  } catch (_error) {
+    if (session.role === "owner" && !session.provisional) {
+      updateStatus(session, "offline", "waiting");
+    }
+    return false;
+  }
+}
+
+async function flushPendingSecret(session) {
+  if (session.role !== "owner" || !session.pendingSecret || !session.isConnected || !session.baseKeyBytes || !session.channel) {
+    return;
+  }
+  if (!session.pendingSecret.active || session.pendingSecret.sent) {
+    return;
+  }
+
+  const plaintext = await decryptLocalValue(session.pendingSecret.localSecret);
+  const factor = await deriveSecretFactor(session.pendingSecret);
+  const payloadKey = await derivePayloadKey(session, factor);
+  const secret = await encryptSecret(payloadKey, plaintext);
+  const message = {
+    kind: "secret",
+    id: session.pendingSecret.id,
+    burnAfterRead: session.pendingSecret.burnAfterRead,
+    authMode: session.pendingSecret.authMode,
+    active: session.pendingSecret.active,
+    ciphertext: secret.ciphertext,
+    iv: secret.iv,
+  };
+  session.channel.send(JSON.stringify(message));
+  session.pendingSecret.sent = true;
+  updateStatus(session, "shared", "connected");
+  updateSessionNote(session, "Secret delivered to the live link.");
+}
+
+async function handlePeerMessage(session, message) {
+  switch (message.kind) {
+    case "secret":
+      session.receivedSecret = message;
+      renderReceivedSecret(session, message);
+      break;
+    case "control":
+      handleControl(session, message);
+      break;
+    default:
+      break;
+  }
+}
+
+function renderReceivedSecret(session, message) {
