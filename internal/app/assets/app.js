@@ -1217,3 +1217,56 @@ async function handlePeerMessage(session, message) {
 }
 
 function renderReceivedSecret(session, message) {
+  const node = session.node;
+  const otpWrap = node.querySelector("[data-otp-wrap]");
+  const otpInput = node.querySelector("[data-otp-input]");
+  const factorVisibility = node.querySelector("[data-factor-visibility]");
+  otpWrap.hidden = message.authMode === "none";
+  otpInput.value = "";
+  if (message.authMode === "totp") {
+    otpInput.placeholder = "Enter the current 6-digit code";
+    otpInput.maxLength = TOTP_CODE_LENGTH;
+    otpInput.inputMode = "numeric";
+    otpInput.type = "text";
+    factorVisibility.hidden = true;
+  } else {
+    otpInput.placeholder = "Enter the passphrase";
+    otpInput.maxLength = MAX_PASSPHRASE_LENGTH;
+    otpInput.inputMode = "text";
+    otpInput.type = "password";
+    factorVisibility.hidden = false;
+    syncSensitiveButtonLabel(factorVisibility, "Show passphrase", "passphrase");
+  }
+  node.querySelector("[data-secret-meta]").textContent = message.authMode === "totp"
+    ? message.burnAfterRead ? "Authenticator code required. Will delete on read." : "Authenticator code required."
+    : message.authMode === "passphrase"
+      ? message.burnAfterRead ? "Passphrase required. Will delete on read." : "Passphrase required."
+      : message.burnAfterRead ? "Will delete on read." : "Ready to read.";
+  node.querySelector("[data-secret-placeholder]").hidden = false;
+  setAnimatedText(node.querySelector("[data-secret-placeholder]"), "Encrypted secret received.");
+  node.querySelector("[data-secret-plaintext]").hidden = true;
+
+  const actions = node.querySelector("[data-secret-actions]");
+  actions.innerHTML = "";
+  const read = document.createElement("button");
+  read.type = "button";
+  read.className = "decrypt-secret-button";
+  read.title = "Decrypt secret";
+  read.setAttribute("aria-label", "Decrypt secret");
+  read.innerHTML = `
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+      <circle cx="12" cy="12" r="2.5"></circle>
+    </svg>
+    <span>DECRYPT</span>
+  `;
+  read.disabled = !message.active;
+  read.addEventListener("click", async () => {
+    if (node.classList.contains("is-disabled") || !session.baseKeyBytes) {
+      return;
+    }
+    try {
+      const payloadKey = await derivePayloadKey(session, message.authMode === "none" ? "" : otpInput.value.trim());
+      const plaintext = await decryptSecret(payloadKey, message);
+      setAnimatedText(node.querySelector("[data-secret-plaintext]"), plaintext);
+      node.querySelector("[data-secret-plaintext]").hidden = false;
