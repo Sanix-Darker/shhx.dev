@@ -1270,3 +1270,56 @@ function renderReceivedSecret(session, message) {
       const plaintext = await decryptSecret(payloadKey, message);
       setAnimatedText(node.querySelector("[data-secret-plaintext]"), plaintext);
       node.querySelector("[data-secret-plaintext]").hidden = false;
+      node.querySelector("[data-secret-placeholder]").hidden = true;
+      scrollSecretContentIntoView(node.querySelector("[data-secret-plaintext]"));
+      node.querySelector("[data-secret-meta]").textContent = message.burnAfterRead ? "Read once. Deleted after opening." : "Opened.";
+      actions.innerHTML = "";
+      updateStatus(session, "open", "connected");
+      if (message.burnAfterRead) {
+        session.channel.send(JSON.stringify({ kind: "control", action: "burn", id: message.id }));
+      }
+    } catch (_error) {
+      node.querySelector("[data-secret-meta]").textContent = message.authMode === "totp"
+        ? "Could not decrypt. Check the authenticator code."
+        : "Could not decrypt. Check the passphrase.";
+    }
+  });
+  actions.appendChild(read);
+  updateStatus(session, message.active ? "sealed" : "off", message.active ? "connected" : "waiting");
+}
+
+function toggleSecret(session) {
+  if (!session.pendingSecret) {
+    return;
+  }
+  session.pendingSecret.active = !session.pendingSecret.active;
+  persistLocalSecret(session.pendingSecret);
+  session.node.classList.toggle("is-disabled", !session.pendingSecret.active);
+  syncOwnerControls(session);
+  updateStatus(session, session.pendingSecret.active ? "ready" : "off", "waiting");
+  if (session.pendingSecret.sent && session.channel) {
+    session.channel.send(JSON.stringify({
+      kind: "control",
+      action: "toggle",
+      id: session.pendingSecret.id,
+      active: session.pendingSecret.active,
+    }));
+    if (!session.pendingSecret.active) {
+      sendUnavailable(session);
+    }
+  } else if (session.pendingSecret.active) {
+    flushPendingSecret(session);
+  } else if (session.channel) {
+    sendUnavailable(session);
+  }
+}
+
+async function deleteSecret(session) {
+  clearSecretExpiryTimer(session.roomCode);
+  removeLocalSecret(session.pendingSecret?.id);
+  if (session.pendingSecret?.sent && session.channel) {
+    session.channel.send(JSON.stringify({ kind: "control", action: "delete", id: session.pendingSecret.id }));
+  }
+  await leaveSession(session, true);
+}
+
