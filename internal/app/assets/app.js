@@ -1323,3 +1323,56 @@ async function deleteSecret(session) {
   await leaveSession(session, true);
 }
 
+function handleControl(session, message) {
+  if (message.action === "unavailable") {
+    if (session.role === "guest") {
+      redirectHome();
+      return;
+    }
+  }
+  if (message.action === "toggle") {
+    if (session.role === "guest" && !message.active) {
+      redirectHome();
+      return;
+    }
+    session.node.classList.toggle("is-disabled", !message.active);
+    updateStatus(session, message.active ? "sealed" : "off", message.active ? "connected" : "waiting");
+  }
+  if (message.action === "delete") {
+    if (session.role === "guest") {
+      redirectHome();
+      return;
+    }
+    clearSecretExpiryTimer(session.roomCode);
+    removeLocalSecret(session.pendingSecret?.id);
+    session.node.remove();
+    appState.sessions.delete(session.roomCode);
+    syncBulkActions();
+    syncFeedEmptyState();
+  }
+  if (message.action === "burn") {
+    markBurned(session);
+  }
+}
+
+function sendUnavailable(session) {
+  if (!session.channel || !session.pendingSecret) {
+    return;
+  }
+  session.channel.send(JSON.stringify({
+    kind: "control",
+    action: "unavailable",
+    id: session.pendingSecret.id,
+  }));
+}
+
+function markBurned(session) {
+  const node = session.node;
+  clearSecretExpiryTimer(session.roomCode);
+  removeLocalSecret(session.pendingSecret?.id);
+  if (session.pendingSecret) {
+    session.pendingSecret.active = false;
+  }
+  node.classList.add("is-burned");
+  if (session.role === "guest" && node.querySelector("[data-secret-plaintext]").hidden === false) {
+    node.querySelector("[data-secret-meta]").textContent = "Deleted on read.";
