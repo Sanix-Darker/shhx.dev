@@ -1376,3 +1376,56 @@ function markBurned(session) {
   node.classList.add("is-burned");
   if (session.role === "guest" && node.querySelector("[data-secret-plaintext]").hidden === false) {
     node.querySelector("[data-secret-meta]").textContent = "Deleted on read.";
+    node.querySelector("[data-secret-actions]").innerHTML = "";
+    updateStatus(session, "burned", "waiting");
+    return;
+  }
+  node.querySelector("[data-secret-meta]").textContent = "Deleted on read.";
+  node.querySelector("[data-secret-placeholder]").hidden = false;
+  setAnimatedText(node.querySelector("[data-secret-placeholder]"), "This secret was deleted on read.");
+  node.querySelector("[data-secret-plaintext]").hidden = true;
+  node.querySelector("[data-secret-actions]").innerHTML = "";
+  updateStatus(session, "burned", "waiting");
+  syncOwnerControls(session);
+  syncBulkActions();
+}
+
+async function leaveSession(session, animateRemove = false) {
+  try {
+    if (appState.activeCardFocusRoomCode === session.roomCode) {
+      unfocusSessionCard(session);
+    }
+    session.isDeleted = true;
+    if (session.provisionTimer) {
+      window.clearTimeout(session.provisionTimer);
+      session.provisionTimer = null;
+    }
+    clearSecretExpiryTimer(session.roomCode);
+    session.eventSource?.close();
+    session.channel?.close();
+    session.rtc?.close();
+    if (!session.provisional) {
+      await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`, {
+        method: "POST",
+      }).catch(() => {});
+    }
+  } finally {
+    appState.sessions.delete(session.roomCode);
+    if (animateRemove) {
+      await animateCardRemoval(session.node);
+    } else {
+      session.node.remove();
+    }
+    syncBulkActions();
+    syncFeedEmptyState();
+  }
+}
+
+function resetPeerLink(session) {
+  session.channel?.close();
+  session.rtc?.close();
+  session.channel = null;
+  session.rtc = null;
+  session.baseKeyBytes = null;
+  session.isConnected = false;
+}
