@@ -1429,3 +1429,56 @@ function resetPeerLink(session) {
   session.baseKeyBytes = null;
   session.isConnected = false;
 }
+
+function updateSessionNote(session, text) {
+  void session;
+  void text;
+}
+
+function updateStatus(session, label, state) {
+  const pill = session.node.querySelector("[data-room-status]");
+  pill.textContent = label;
+  pill.dataset.state = state;
+}
+
+function updateComposerNote(text) {
+  showToast(text);
+}
+
+function setupBulkActions() {
+  const enable = document.querySelector("#bulk-enable-button");
+  const disable = document.querySelector("#bulk-disable-button");
+  const email = document.querySelector("#bulk-email-button");
+  const remove = document.querySelector("#bulk-delete-button");
+  if (!enable || !disable || !email || !remove) {
+    return;
+  }
+
+  enable.addEventListener("click", async () => {
+    for (const session of selectedOwnerSessions()) {
+      if (session.pendingSecret?.active === false) {
+        toggleSecret(session);
+      }
+    }
+    syncBulkActions();
+  });
+  disable.addEventListener("click", async () => {
+    for (const session of selectedOwnerSessions()) {
+      if (session.pendingSecret?.active !== false) {
+        toggleSecret(session);
+      }
+    }
+    syncBulkActions();
+  });
+  email.addEventListener("click", () => {
+    const links = selectedOwnerSessions().map((session) => shareLinkFor(session.roomCode));
+    if (links.length === 0) {
+      return;
+    }
+    window.location.href = mailtoLinkFor(links);
+  });
+  remove.addEventListener("click", async () => {
+    const selected = selectedOwnerSessions();
+    for (const session of selected) {
+      await deleteSecret(session);
+    }
