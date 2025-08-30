@@ -1482,3 +1482,56 @@ function setupBulkActions() {
     for (const session of selected) {
       await deleteSecret(session);
     }
+    syncBulkActions();
+  });
+}
+
+function selectedOwnerSessions() {
+  return [...appState.sessions.values()].filter((session) => session.role === "owner" && session.selected);
+}
+
+function syncBulkActions() {
+  const toolbar = document.querySelector("#composer-toolbar");
+  const note = document.querySelector("#bulk-selection-note");
+  const row = document.querySelector("#bulk-actions-row");
+  const enable = document.querySelector("#bulk-enable-button");
+  const disable = document.querySelector("#bulk-disable-button");
+  const email = document.querySelector("#bulk-email-button");
+  const remove = document.querySelector("#bulk-delete-button");
+  if (!toolbar || !note || !row || !enable || !disable || !email || !remove) {
+    return;
+  }
+
+  const selected = selectedOwnerSessions();
+  if (selected.length === 0) {
+    toolbar.hidden = true;
+    note.hidden = true;
+    row.hidden = true;
+    note.textContent = "No secrets selected.";
+    enable.disabled = true;
+    disable.disabled = true;
+    email.disabled = true;
+    remove.disabled = true;
+    refreshComposerHeight();
+    return;
+  }
+  toolbar.hidden = false;
+  note.hidden = false;
+  row.hidden = false;
+  note.textContent = selected.length === 1 ? "1 secret selected." : `${selected.length} secrets selected.`;
+  enable.disabled = selected.every((session) => session.pendingSecret?.active !== false);
+  disable.disabled = selected.every((session) => session.pendingSecret?.active === false);
+  email.disabled = selected.length === 0;
+  remove.disabled = selected.length === 0;
+  refreshComposerHeight();
+}
+
+function shareLinkFor(roomCode) {
+  return `${window.location.origin}/${encodeURIComponent(roomCode)}`;
+}
+
+function mailtoLinkFor(links) {
+  const subject = links.length > 1 ? "shhx secret links" : "shhx secret link";
+  const body = links.length > 1
+    ? `Open these live encrypted secret links while I stay online:\n\n${links.join("\n")}`
+    : `Open this live encrypted secret link while I stay online:\n\n${links[0]}`;
