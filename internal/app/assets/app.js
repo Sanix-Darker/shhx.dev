@@ -1641,3 +1641,56 @@ function syncFullscreenButtonState(isOpen) {
     return;
   }
   const label = isOpen ? "Exit fullscreen editor" : "Open fullscreen editor";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", String(isOpen));
+  const sr = button.querySelector(".sr-only");
+  if (sr) {
+    sr.textContent = label;
+  }
+}
+
+function syncFeedEmptyState() {
+  const feed = document.querySelector("#feed");
+  const empty = document.querySelector("#empty-feed");
+  if (!feed || !empty) {
+    return;
+  }
+  const cards = feed.querySelectorAll(".secret-card");
+  empty.hidden = cards.length > 0;
+}
+
+function persistLocalSecret(secret) {
+  if (!secret?.id) {
+    return;
+  }
+  const secrets = readStoredSecrets().filter((item) => item.id !== secret.id);
+  secrets.unshift({
+    id: secret.id,
+    hint: String(secret.hint || "").trim(),
+    createdAt: normalizeCreatedAt(secret.createdAt),
+    burnAfterRead: secret.burnAfterRead,
+    localSecret: secret.localSecret,
+    localPassphrase: secret.localPassphrase,
+    localTOTPSecret: secret.localTOTPSecret,
+    authMode: secret.authMode,
+    expiresAt: normalizeExpiresAt(secret.expiresAt),
+    active: secret.active,
+  });
+  localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(secrets));
+}
+
+function removeLocalSecret(secretID) {
+  if (!secretID) {
+    return;
+  }
+  const secrets = readStoredSecrets().filter((item) => item.id !== secretID);
+  localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(secrets));
+}
+
+function readStoredSecrets() {
+  migrateLocalStorageKey(LEGACY_LOCAL_SECRET_LIST_STORAGE, LOCAL_SECRET_LIST_STORAGE);
+  const raw = localStorage.getItem(LOCAL_SECRET_LIST_STORAGE);
+  if (!raw) {
+    return [];
+  }
