@@ -1535,3 +1535,56 @@ function mailtoLinkFor(links) {
   const body = links.length > 1
     ? `Open these live encrypted secret links while I stay online:\n\n${links.join("\n")}`
     : `Open this live encrypted secret link while I stay online:\n\n${links[0]}`;
+  return `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function redirectHome() {
+  window.location.replace("/");
+}
+
+function getOverlay() {
+  return document.querySelector("#ui-overlay");
+}
+
+function openOverlay() {
+  const overlay = getOverlay();
+  if (!overlay) {
+    return;
+  }
+  overlay.hidden = false;
+  document.body.classList.add("ui-overlay-open");
+  overlay.onclick = () => closeActiveUI();
+}
+
+function closeOverlayIfIdle() {
+  if (appState.editorFullscreenOpen || appState.activeCardFocusRoomCode) {
+    return;
+  }
+  const overlay = getOverlay();
+  if (!overlay) {
+    return;
+  }
+  overlay.hidden = true;
+  overlay.onclick = null;
+  document.body.classList.remove("ui-overlay-open");
+}
+
+function toggleEditorFullscreen(composer) {
+  if (!composer) {
+    return;
+  }
+  if (appState.editorFullscreenOpen) {
+    closeEditorFullscreen(composer);
+    return;
+  }
+  appState.editorFullscreenOpen = true;
+  document.body.classList.add("editor-fullscreen-open");
+  composer.open = true;
+  composer.classList.add("is-fullscreen-panel");
+  syncFullscreenButtonState(true);
+  refreshComposerHeight();
+  openOverlay();
+}
+
+function closeEditorFullscreen(composer) {
+  if (!composer) {
