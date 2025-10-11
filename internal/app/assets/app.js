@@ -1588,3 +1588,56 @@ function toggleEditorFullscreen(composer) {
 
 function closeEditorFullscreen(composer) {
   if (!composer) {
+    return;
+  }
+  if (!appState.editorFullscreenOpen) {
+    return;
+  }
+  appState.editorFullscreenOpen = false;
+  document.body.classList.remove("editor-fullscreen-open");
+  composer.classList.remove("is-fullscreen-panel");
+  syncFullscreenButtonState(false);
+  refreshComposerHeight();
+  closeOverlayIfIdle();
+}
+
+function focusSessionCard(session) {
+  if (appState.activeCardFocusRoomCode && appState.activeCardFocusRoomCode !== session.roomCode) {
+    const active = appState.sessions.get(appState.activeCardFocusRoomCode);
+    if (active) {
+      active.node.classList.remove("is-foreground");
+    }
+  }
+  session.node.open = true;
+  session.node.classList.add("is-foreground");
+  appState.activeCardFocusRoomCode = session.roomCode;
+  openOverlay();
+}
+
+function unfocusSessionCard(session) {
+  session.node.classList.remove("is-foreground");
+  if (appState.activeCardFocusRoomCode === session.roomCode) {
+    appState.activeCardFocusRoomCode = null;
+  }
+  closeOverlayIfIdle();
+}
+
+function closeActiveUI() {
+  closeEditorFullscreen(document.querySelector("#composer"));
+  if (appState.activeCardFocusRoomCode) {
+    const active = appState.sessions.get(appState.activeCardFocusRoomCode);
+    if (active) {
+      unfocusSessionCard(active);
+    } else {
+      appState.activeCardFocusRoomCode = null;
+    }
+  }
+  closeOverlayIfIdle();
+}
+
+function syncFullscreenButtonState(isOpen) {
+  const button = document.querySelector("#editor-fullscreen-button");
+  if (!button) {
+    return;
+  }
+  const label = isOpen ? "Exit fullscreen editor" : "Open fullscreen editor";
