@@ -1694,3 +1694,56 @@ function readStoredSecrets() {
   if (!raw) {
     return [];
   }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((item) => ({
+      ...item,
+      hint: typeof item.hint === "string" ? item.hint.trim() : "",
+      createdAt: normalizeCreatedAt(item.createdAt),
+      expiresAt: normalizeExpiresAt(item.expiresAt),
+    })).map((item) => {
+      if (item.expiresAt === null) {
+        return { ...item, expiresAt: null };
+      }
+      return item;
+    });
+  } catch (_error) {
+    return [];
+  }
+}
+
+function syncCardSearchIndex(session) {
+  if (!session?.node) {
+    return;
+  }
+  const roomCode = String(session.roomCode || "").trim();
+  const hint = String(session.pendingSecret?.hint || "").trim();
+  const plaintext = String(session.pendingSecret?.searchPlaintext || "").trim();
+  const title = session.node.querySelector("[data-card-title]");
+  if (title) {
+    title.textContent = roomCode ? `s: ${roomCode}` : "secret";
+  }
+  session.node.dataset.searchText = `${roomCode} ${hint} ${plaintext}`.trim().toLowerCase();
+}
+
+function setupFeedSearch() {
+  const input = document.querySelector("#feed-search-input");
+  if (!input) {
+    return;
+  }
+  input.addEventListener("input", () => {
+    applyFeedFilter();
+  });
+  input.addEventListener("keyup", () => {
+    applyFeedFilter();
+  });
+}
+
+function setupConnectivityRecovery() {
+  window.addEventListener("online", () => {
+    appState.sessions.forEach((session) => {
+      if (session.provisional) {
+        void provisionOwnerSession(session);
