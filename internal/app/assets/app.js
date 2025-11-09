@@ -1747,3 +1747,56 @@ function setupConnectivityRecovery() {
     appState.sessions.forEach((session) => {
       if (session.provisional) {
         void provisionOwnerSession(session);
+      }
+    });
+  });
+  window.addEventListener("beforeunload", () => {
+    appState.sessions.forEach((session) => {
+      session.eventSource?.close();
+      session.channel?.close();
+      session.rtc?.close();
+    });
+  });
+}
+
+function applyFeedFilter() {
+  const input = document.querySelector("#feed-search-input");
+  const query = String(input?.value || "").trim().toLowerCase();
+  appState.sessions.forEach((session) => {
+    if (!session?.node) {
+      return;
+    }
+    const haystack = String(session.node.dataset.searchText || session.roomCode || "").toLowerCase();
+    const matches = !query || haystack.includes(query);
+    session.node.hidden = !matches;
+  });
+}
+
+function syncEditorGutter(textarea, gutter) {
+  if (!textarea || !gutter) {
+    return;
+  }
+  const lines = Math.max(1, textarea.value.split("\n").length);
+  gutter.textContent = Array.from({ length: lines }, (_value, index) => index + 1).join("\n");
+  gutter.scrollTop = textarea.scrollTop;
+}
+
+function toggleSensitiveInput(input, button, labelBase) {
+  const isHidden = input.type === "password";
+  input.type = isHidden ? "text" : "password";
+  syncSensitiveButtonLabel(button, isHidden ? `Hide ${labelBase}` : `Show ${labelBase}`);
+}
+
+function syncSensitiveButtonLabel(button, label) {
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  const sr = button.querySelector(".sr-only");
+  if (sr) {
+    sr.textContent = label;
+  }
+}
+
+function syncComposerToggleButton(button, enabled, onLabel, offLabel) {
+  const label = enabled ? onLabel : offLabel;
+  button.title = label;
+  button.setAttribute("aria-label", label);
