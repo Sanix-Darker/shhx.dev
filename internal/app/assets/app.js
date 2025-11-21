@@ -1800,3 +1800,56 @@ function syncComposerToggleButton(button, enabled, onLabel, offLabel) {
   const label = enabled ? onLabel : offLabel;
   button.title = label;
   button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", String(enabled));
+  const sr = button.querySelector(".sr-only");
+  if (sr) {
+    sr.textContent = label;
+  }
+}
+
+function setAnimatedText(node, finalText) {
+  if (!node) {
+    return;
+  }
+  if (prefersReducedMotion.matches) {
+    node.textContent = finalText;
+    return;
+  }
+
+  const runID = String(Date.now() + Math.random());
+  node.dataset.scrambleRun = runID;
+  const chars = Array.from(finalText);
+  const startedAt = performance.now();
+  const duration = Math.min(420, Math.max(180, chars.length * 16));
+
+  const frame = (now) => {
+    if (node.dataset.scrambleRun !== runID) {
+      return;
+    }
+    const progress = Math.min(1, (now - startedAt) / duration);
+    const revealCount = Math.floor(chars.length * progress);
+    node.textContent = chars.map((char, index) => {
+      if (char === "\n" || char === " ") {
+        return char;
+      }
+      if (index < revealCount || progress === 1) {
+        return char;
+      }
+      return scrambleAlphabet[Math.floor(Math.random() * scrambleAlphabet.length)];
+    }).join("");
+    if (progress < 1) {
+      requestAnimationFrame(frame);
+    }
+  };
+
+  requestAnimationFrame(frame);
+}
+
+function syncTTLMark(session) {
+  const mark = session.node.querySelector("[data-ttl-mark]");
+  if (!mark) {
+    return;
+  }
+  const expiresAt = normalizeExpiresAt(session.pendingSecret?.expiresAt);
+  mark.hidden = expiresAt === null;
+  if (expiresAt !== null) {
