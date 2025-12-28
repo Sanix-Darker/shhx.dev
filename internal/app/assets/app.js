@@ -2012,3 +2012,56 @@ function setupComposerCollapse() {
       composerBody.style.height = "auto";
     } else {
       composerBody.classList.add("is-hidden");
+      composerBody.style.display = "none";
+      composerBody.style.height = "0px";
+    }
+    if (appState.composerPendingCollapsed !== null && appState.composerPendingCollapsed !== appState.composerCollapsed) {
+      const pending = appState.composerPendingCollapsed;
+      appState.composerPendingCollapsed = null;
+      setComposerCollapsed(pending);
+    }
+  });
+
+  composerSummary?.addEventListener("click", (event) => {
+    if (appState.composerCollapsed) {
+      event.preventDefault();
+      composer.open = true;
+      setComposerCollapsed(false);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    refreshComposerHeight();
+  });
+  if (document.readyState === "complete") {
+    requestAnimationFrame(() => {
+      refreshComposerHeight();
+    });
+  } else {
+    window.addEventListener("load", () => {
+      requestAnimationFrame(() => {
+        refreshComposerHeight();
+      });
+    }, { once: true });
+  }
+}
+
+function refreshComposerHeight() {
+  const composer = document.querySelector("#composer");
+  const composerBody = composer?.querySelector(".composer-body");
+  if (!composerBody || appState.composerCollapsed) {
+    return;
+  }
+  composerBody.classList.remove("is-hidden");
+  composerBody.style.display = "grid";
+  composerBody.style.height = "auto";
+  composerBody.style.height = `${composerBody.scrollHeight}px`;
+}
+
+function parseTTLSelection(value) {
+  const allowed = new Set(["300", "1800", "3600", "21600", "86400"]);
+  const normalized = String(value || "").trim();
+  if (!allowed.has(normalized)) {
+    return null;
+  }
+  const ttl = Number.parseInt(normalized, 10);
