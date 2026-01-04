@@ -1853,3 +1853,56 @@ function syncTTLMark(session) {
   const expiresAt = normalizeExpiresAt(session.pendingSecret?.expiresAt);
   mark.hidden = expiresAt === null;
   if (expiresAt !== null) {
+    mark.title = `TTL secret. Expires ${new Date(expiresAt).toLocaleString()}`;
+    mark.setAttribute("aria-label", mark.title);
+  } else {
+    mark.removeAttribute("title");
+    mark.removeAttribute("aria-label");
+  }
+}
+
+function syncCreatedAt(session) {
+  const node = session.node.querySelector("[data-created-at]");
+  if (!node) {
+    return;
+  }
+  const createdAt = normalizeCreatedAt(session.pendingSecret?.createdAt);
+  if (createdAt === null) {
+    node.hidden = true;
+    node.textContent = "";
+    return;
+  }
+  node.hidden = false;
+  node.textContent = formatRelativeTime(createdAt);
+}
+
+function scheduleSecretExpiry(session) {
+  clearSecretExpiryTimer(session.roomCode);
+  const expiresAt = normalizeExpiresAt(session.pendingSecret?.expiresAt);
+  if (expiresAt === null) {
+    return;
+  }
+
+  const remaining = expiresAt - Date.now();
+  if (remaining <= 0) {
+    expireSecret(session);
+    return;
+  }
+
+  const timer = window.setTimeout(() => {
+    expireSecret(session);
+  }, remaining);
+  appState.expiryTimers.set(session.roomCode, timer);
+}
+
+function clearSecretExpiryTimer(roomCode) {
+  const timer = appState.expiryTimers.get(roomCode);
+  if (timer) {
+    window.clearTimeout(timer);
+    appState.expiryTimers.delete(roomCode);
+  }
+}
+
+async function expireSecret(session) {
+  if (!appState.sessions.has(session.roomCode)) {
+    return;
