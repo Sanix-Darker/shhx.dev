@@ -1906,3 +1906,56 @@ function clearSecretExpiryTimer(roomCode) {
 async function expireSecret(session) {
   if (!appState.sessions.has(session.roomCode)) {
     return;
+  }
+  removeLocalSecret(session.pendingSecret?.id);
+  if (session.channel && session.pendingSecret?.sent) {
+    session.channel.send(JSON.stringify({ kind: "control", action: "delete", id: session.pendingSecret.id }));
+  } else if (session.channel) {
+    sendUnavailable(session);
+  }
+  await leaveSession(session, true);
+}
+
+function animateCardRemoval(node) {
+  if (!node || prefersReducedMotion.matches) {
+    node?.remove();
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    node.classList.add("is-removing");
+    window.setTimeout(() => {
+      node.remove();
+      resolve();
+    }, 430);
+  });
+}
+
+function setupFeedScrollMotion() {
+  let lastY = window.scrollY;
+  let lastTime = performance.now();
+  let clearTimer = 0;
+  window.addEventListener("scroll", () => {
+    const now = performance.now();
+    const deltaY = Math.abs(window.scrollY - lastY);
+    const deltaT = Math.max(1, now - lastTime);
+    const velocity = deltaY / deltaT;
+    lastY = window.scrollY;
+    lastTime = now;
+
+    if (velocity < 1.2 || prefersReducedMotion.matches) {
+      return;
+    }
+
+    document.querySelectorAll("#feed .secret-card").forEach((card) => {
+      card.classList.add("is-scroll-quick");
+    });
+    window.clearTimeout(clearTimer);
+    clearTimer = window.setTimeout(() => {
+      document.querySelectorAll("#feed .secret-card").forEach((card) => {
+        card.classList.remove("is-scroll-quick");
+      });
+    }, 140);
+  }, { passive: true });
+}
+
+function setupComposerCollapse() {
