@@ -1959,3 +1959,56 @@ function setupFeedScrollMotion() {
 }
 
 function setupComposerCollapse() {
+  const composer = document.querySelector("#composer");
+  const composerBody = composer?.querySelector(".composer-body");
+  const composerSummary = composer?.querySelector("summary");
+  if (!composer) {
+    return;
+  }
+
+  const setComposerCollapsed = (collapsed) => {
+    if (!composerBody) {
+      return;
+    }
+    if (appState.composerAnimating) {
+      appState.composerPendingCollapsed = collapsed;
+      return;
+    }
+    if (appState.composerCollapsed === collapsed) {
+      return;
+    }
+
+    appState.composerAnimating = true;
+    appState.composerPendingCollapsed = null;
+
+    if (!collapsed) {
+      composerBody.classList.remove("is-hidden");
+      composerBody.style.display = "grid";
+    }
+    composerBody.style.height = "auto";
+    const measuredExpandedHeight = composerBody.scrollHeight;
+    const startHeight = composerBody.getBoundingClientRect().height || measuredExpandedHeight;
+    composerBody.style.height = `${startHeight}px`;
+    void composerBody.offsetHeight;
+
+    requestAnimationFrame(() => {
+      composer.classList.toggle("is-collapsed", collapsed);
+      const targetHeight = collapsed ? 0 : measuredExpandedHeight;
+      composerBody.style.height = `${targetHeight}px`;
+      appState.composerCollapsed = collapsed;
+    });
+  };
+
+  appState.composerCollapseController = setComposerCollapsed;
+
+  composerBody?.addEventListener("transitionend", (event) => {
+    if (event.propertyName !== "height") {
+      return;
+    }
+    appState.composerAnimating = false;
+    if (!appState.composerCollapsed) {
+      composerBody.classList.remove("is-hidden");
+      composerBody.style.display = "grid";
+      composerBody.style.height = "auto";
+    } else {
+      composerBody.classList.add("is-hidden");
