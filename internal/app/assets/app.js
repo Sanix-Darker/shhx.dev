@@ -2065,3 +2065,56 @@ function parseTTLSelection(value) {
     return null;
   }
   const ttl = Number.parseInt(normalized, 10);
+  return Number.isFinite(ttl) && ttl > 0 ? ttl : null;
+}
+
+function normalizeExpiresAt(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeCreatedAt(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatRelativeTime(timestamp) {
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) {
+    return "now";
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} min${minutes === 1 ? "" : "s"} ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function ensureRelativeTimeTicker() {
+  if (appState.relativeTimeTimerStarted) {
+    return;
+  }
+  appState.relativeTimeTimerStarted = true;
+  window.setInterval(() => {
+    for (const session of appState.sessions.values()) {
+      if (session.role === "owner") {
+        syncCreatedAt(session);
+      }
+    }
+  }, 60000);
+}
+
+function notifySecretConnected(session) {
+  if (session.connectedToastShown) {
+    return;
+  }
+  session.connectedToastShown = true;
+  showToast("Secret link is live.", {
+    action: {
+      label: "Show secret",
+      onClick: () => focusSessionCard(session),
