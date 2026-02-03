@@ -2118,3 +2118,56 @@ function notifySecretConnected(session) {
     action: {
       label: "Show secret",
       onClick: () => focusSessionCard(session),
+    },
+  });
+}
+
+function showToast(message, options = {}) {
+  const stack = document.querySelector("#toast-stack");
+  if (!stack || !message) {
+    return;
+  }
+
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  const copy = document.createElement("div");
+  copy.className = "toast-copy";
+  copy.textContent = message;
+  toast.appendChild(copy);
+
+  if (options.action) {
+    const actions = document.createElement("div");
+    actions.className = "toast-actions";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "icon-button";
+    button.title = options.action.label;
+    button.setAttribute("aria-label", options.action.label);
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M9 4H4v5"></path>
+        <path d="M15 4h5v5"></path>
+        <path d="M20 15v5h-5"></path>
+        <path d="M4 15v5h5"></path>
+      </svg>
+      <span class="sr-only">${options.action.label}</span>
+    `;
+    button.addEventListener("click", () => {
+      options.action.onClick?.();
+      dismissToast(toast);
+    });
+    actions.appendChild(button);
+    toast.appendChild(actions);
+  }
+
+  stack.prepend(toast);
+  window.setTimeout(() => dismissToast(toast), options.duration ?? 3200);
+}
+
+function dismissToast(toast) {
+  if (!toast || toast.dataset.leaving === "true") {
+    return;
+  }
+  toast.dataset.leaving = "true";
+  toast.classList.add("is-leaving");
+  window.setTimeout(() => {
