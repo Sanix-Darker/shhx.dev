@@ -2171,3 +2171,56 @@ function dismissToast(toast) {
   toast.dataset.leaving = "true";
   toast.classList.add("is-leaving");
   window.setTimeout(() => {
+    toast.remove();
+  }, 220);
+}
+
+function scrollSecretContentIntoView(node) {
+  if (!node) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    node.scrollIntoView({
+      behavior: prefersReducedMotion.matches ? "auto" : "smooth",
+      block: "start",
+      inline: "nearest",
+    });
+  });
+}
+
+async function encryptSecret(key, plaintext) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, textEncoder.encode(plaintext));
+  return {
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+  };
+}
+
+async function decryptSecret(key, payload) {
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(payload.iv) },
+    key,
+    base64ToBytes(payload.ciphertext),
+  );
+  return textDecoder.decode(plaintext);
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesToBase64(bytes) {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function base64ToBytes(value) {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+async function encryptLocalValue(value) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    appState.localVaultKey,
+    textEncoder.encode(value),
