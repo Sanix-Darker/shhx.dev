@@ -2224,3 +2224,56 @@ async function encryptLocalValue(value) {
     { name: "AES-GCM", iv },
     appState.localVaultKey,
     textEncoder.encode(value),
+  );
+  return {
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+  };
+}
+
+async function decryptLocalValue(payload) {
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(payload.iv) },
+    appState.localVaultKey,
+    base64ToBytes(payload.ciphertext),
+  );
+  return textDecoder.decode(plaintext);
+}
+
+async function deriveSecretFactor(pendingSecret) {
+  if (pendingSecret.authMode === "passphrase") {
+    return pendingSecret.localPassphrase ? decryptLocalValue(pendingSecret.localPassphrase) : "";
+  }
+  if (pendingSecret.authMode === "totp") {
+    const secret = await decryptLocalValue(pendingSecret.localTOTPSecret);
+    return generateCurrentTOTP(secret);
+  }
+  return "";
+}
+
+function generateTOTPSecret() {
+  const bytes = crypto.getRandomValues(new Uint8Array(20));
+  return bytesToBase32(bytes);
+}
+
+async function generateCurrentTOTP(secret) {
+  const keyBytes = base32ToBytes(secret);
+  const counter = Math.floor(Date.now() / 30000);
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setUint32(4, counter, false);
+
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const hmac = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, buffer));
+  const offset = hmac[hmac.length - 1] & 0x0f;
+  const code = ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff);
+  return String(code % 1000000).padStart(6, "0");
