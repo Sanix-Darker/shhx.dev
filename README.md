@@ -65,6 +65,14 @@ If the sender disconnects, the live handoff stops. `shhx` is not an offline drop
 - the server only sees metadata needed for live signaling
 - request limits, validation, rate limiting, and strict security headers are enabled on the HTTP side
 
+## Endpoint Caveat
+
+`shhx` protects secrets in transit and avoids server-side secret storage, but it does not protect a compromised browser or device.
+
+- if the browser profile is compromised, locally persisted sender-side secrets can still be exposed
+- if the endpoint is compromised, decrypted plaintext can be exposed at read time
+- browser extensions, malware, shoulder-surfing, and clipboard leakage remain out of scope
+
 ## Current Limits
 
 - both sides must be online at the same time
@@ -88,6 +96,13 @@ make build
 ```
 
 The final binary embeds the generated frontend assets.
+
+## Deployment
+
+- the files in `deploy/` are examples, not production-specific infrastructure
+- keep production hostnames, certificates, and provider-specific details out of the public repo
+- deploy the built binary and runtime config only
+- do not deploy source code to production servers
 
 ## Test
 
