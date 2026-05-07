@@ -1,0 +1,102 @@
+const { test, expect } = require("@playwright/test");
+
+test.describe("live share flow", () => {
+  test("shares and decrypts a secret without a passphrase", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "alpha secret from owner",
+      hint: "alpha",
+    });
+
+    await recipientPage.goto(`/${roomCode}`);
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("alpha secret from owner");
+
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Someone opened the link.");
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Recipient decrypted the secret");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("reports decrypt failure before passphrase success", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "beta secret with passphrase",
+      passphrase: "correct horse battery staple",
+      hint: "beta",
+    });
+
+    await recipientPage.goto(`/${roomCode}`);
+    await expect(recipientPage.getByPlaceholder("Enter the passphrase")).toBeVisible();
+    await recipientPage.getByPlaceholder("Enter the passphrase").fill("wrong passphrase");
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-meta]")).toContainText("Could not decrypt. Check the passphrase.");
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Recipient failed to decrypt with the passphrase");
+
+    await recipientPage.getByPlaceholder("Enter the passphrase").fill("correct horse battery staple");
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("beta secret with passphrase");
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Recipient decrypted the secret");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("recovers when an earlier opener leaves before the real recipient arrives", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const preview = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const previewPage = await preview.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "gamma secret after preview exit",
+      hint: "gamma",
+    });
+
+    await previewPage.goto(`/${roomCode}`);
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Someone opened the link.");
+    await preview.close();
+
+    await recipientPage.goto(`/${roomCode}`);
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("gamma secret after preview exit");
+
+    await recipient.close();
+    await owner.close();
+  });
+});
+
+async function createSecret(page, options) {
+  await page.locator("#create-secret-input").fill(options.secret);
+  if (options.hint) {
+    await page.locator("#create-hint-input").fill(options.hint);
+  }
+  if (options.passphrase) {
+    await page.locator("#create-passphrase-input").fill(options.passphrase);
+  }
+  await page.locator("#create-secret-button").click();
+
+  const card = page.locator('#feed details.secret-card[data-role="owner"]').first();
+  await expect(card).toBeVisible();
+  await expect(card.locator("[data-secret-meta]")).not.toContainText("Saved locally. Waiting for network");
+
+  const roomCode = await card.getAttribute("data-room-code");
+  expect(roomCode).toBeTruthy();
+  return roomCode;
+}

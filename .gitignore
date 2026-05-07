@@ -1,3 +1,6 @@
 /dist
 /internal/app/static/app.js
 /internal/app/static/styles.css
+/node_modules
+/playwright-report
+/test-results

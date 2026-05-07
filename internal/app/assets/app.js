@@ -7,6 +7,7 @@ const MAX_SECRET_LENGTH = 4096;
 const MAX_PASSPHRASE_LENGTH = 128;
 const MAX_HINT_LENGTH = 72;
 const TOTP_CODE_LENGTH = 6;
+const MAX_SHARED_JOIN_RETRIES = 4;
 
 const appState = {
   identity: null,
@@ -282,24 +283,38 @@ async function autoJoinSharedLink() {
     });
   }
   updateComposerNote("Opening shared secret.");
-
-  const response = await fetch("/ui/rooms/join", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: new URLSearchParams({
-      display_name: "Peer",
-      room_code: shareCode,
-    }),
-  });
-
-  if (!response.ok) {
-    showMissingSharedSecret(response.status, shareCode);
+  const sessionHTML = await joinSharedLink(shareCode);
+  if (!sessionHTML) {
     return;
   }
-
-  const html = await response.text();
-  const node = insertCardHTML(html);
+  const node = insertCardHTML(sessionHTML);
   bootstrapSession(node);
+}
+
+async function joinSharedLink(shareCode) {
+  for (let attempt = 0; attempt <= MAX_SHARED_JOIN_RETRIES; attempt += 1) {
+    const response = await fetch("/ui/rooms/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+      body: new URLSearchParams({
+        display_name: "Peer",
+        room_code: shareCode,
+      }),
+    });
+
+    if (response.ok) {
+      return response.text();
+    }
+
+    if (response.status !== 409 || attempt === MAX_SHARED_JOIN_RETRIES) {
+      showMissingSharedSecret(response.status, shareCode);
+      return "";
+    }
+
+    showToast("Another opener was still attached. Retrying live link.");
+    await delay(400 * (attempt + 1));
+  }
+  return "";
 }
 
 function showMissingSharedSecret(status, shareCode) {
@@ -324,6 +339,12 @@ function showMissingSharedSecret(status, shareCode) {
       ? `Secret ${shareCode} was not found.`
       : `Secret ${shareCode} could not be opened.`,
   );
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 async function createSecret() {
@@ -681,6 +702,7 @@ function bootstrapSession(node, options = {}) {
     linkOpenedToastShown: false,
     validationToastShown: false,
     connectedToastShown: false,
+    leaveNotified: false,
   };
 
   appState.sessions.set(roomCode, session);
@@ -1558,9 +1580,7 @@ async function leaveSession(session, animateRemove = false) {
     session.channel?.close();
     session.rtc?.close();
     if (!session.provisional) {
-      await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`, {
-        method: "POST",
-      }).catch(() => {});
+      await notifySessionLeave(session);
     }
   } finally {
     appState.sessions.delete(session.roomCode);
@@ -1572,6 +1592,35 @@ async function leaveSession(session, animateRemove = false) {
     syncBulkActions();
     syncFeedEmptyState();
   }
+}
+
+async function notifySessionLeave(session) {
+  if (!session || session.provisional || session.leaveNotified) {
+    return;
+  }
+  session.leaveNotified = true;
+  await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`, {
+    method: "POST",
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function notifySessionLeaveSoon(session) {
+  if (!session || session.provisional || session.leaveNotified) {
+    return;
+  }
+  session.leaveNotified = true;
+  const url = `/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`;
+  if (navigator.sendBeacon) {
+    const payload = new Blob([], { type: "text/plain;charset=UTF-8" });
+    if (navigator.sendBeacon(url, payload)) {
+      return;
+    }
+  }
+  fetch(url, {
+    method: "POST",
+    keepalive: true,
+  }).catch(() => {});
 }
 
 function resetPeerLink(session) {
@@ -1913,9 +1962,15 @@ function setupConnectivityRecovery() {
   });
   window.addEventListener("beforeunload", () => {
     appState.sessions.forEach((session) => {
+      notifySessionLeaveSoon(session);
       session.eventSource?.close();
       session.channel?.close();
       session.rtc?.close();
+    });
+  });
+  window.addEventListener("pagehide", () => {
+    appState.sessions.forEach((session) => {
+      notifySessionLeaveSoon(session);
     });
   });
 }

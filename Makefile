@@ -2,7 +2,7 @@ BINARY := dist/shhx
 GOFLAGS := -trimpath
 LDFLAGS := -s -w -buildid=
 
-.PHONY: fmt assets test build run clean
+.PHONY: fmt assets test test-e2e build run clean
 
 fmt:
 	gofmt -w main.go internal/app/security.go internal/app/server.go internal/app/server_test.go internal/room/hub.go internal/room/hub_test.go tools/minify-assets/main.go
@@ -13,6 +13,10 @@ assets:
 test:
 	$(MAKE) assets
 	CGO_ENABLED=0 go test $(GOFLAGS) ./...
+
+test-e2e:
+	$(MAKE) assets
+	npx playwright test
 
 build:
 	$(MAKE) assets
