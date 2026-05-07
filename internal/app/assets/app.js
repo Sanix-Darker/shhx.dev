@@ -72,6 +72,21 @@ function markAppReady() {
   }, 240);
 }
 
+function canonicalJSON(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJSON(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJSON(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function browserIdForPublicKey(publicKey) {
+  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(canonicalJSON(publicKey)));
+  return bytesToHex(new Uint8Array(digest)).slice(0, 16);
+}
+
 function initTheme() {
   const button = document.querySelector("#theme-toggle-button");
   if (!button) {
@@ -112,9 +127,8 @@ async function initIdentity() {
       );
       const publicKey = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
       const privateKey = await crypto.subtle.exportKey("jwk", keyPair.privateKey);
-      const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(JSON.stringify(publicKey)));
       record = {
-        browserId: bytesToHex(new Uint8Array(digest)).slice(0, 16),
+        browserId: await browserIdForPublicKey(publicKey),
         publicKey,
         privateKey,
       };
@@ -651,14 +665,22 @@ function bootstrapSession(node, options = {}) {
     channel: null,
     eventSource: null,
     remotePeerId: null,
+    remoteBrowserId: null,
+    remoteIdentityPublicKey: null,
     isConnected: false,
+    peerValidated: false,
     offerReady: false,
     readySent: false,
+    helloSent: false,
+    validationChallenge: null,
     selected: false,
     provisional: options.provisional === true || node.dataset.provisional === "true",
     provisionAttempts: 0,
     provisionTimer: null,
     isDeleted: false,
+    linkOpenedToastShown: false,
+    validationToastShown: false,
+    connectedToastShown: false,
   };
 
   appState.sessions.set(roomCode, session);
@@ -778,6 +800,14 @@ function attachProvisionedOwnerCard(session, html) {
   session.eventSource?.close();
   session.eventSource = null;
   session.readySent = false;
+  session.helloSent = false;
+  session.peerValidated = false;
+  session.validationChallenge = null;
+  session.remoteBrowserId = null;
+  session.remoteIdentityPublicKey = null;
+  session.linkOpenedToastShown = false;
+  session.validationToastShown = false;
+  session.connectedToastShown = false;
   session.offerReady = false;
   appState.sessions.delete(previousKey);
   appState.sessions.set(session.roomCode, session);
@@ -953,8 +983,13 @@ async function handleServerEvent(session, event) {
       break;
     case "peer-joined":
       session.remotePeerId = event.data.id;
+      session.linkOpenedToastShown = false;
+      session.validationToastShown = false;
       updateStatus(session, "linking", "readying");
-      updateSessionNote(session, "Peer found. Building direct channel.");
+      updateSessionNote(session, session.role === "owner"
+        ? "Peer opened the link. Building direct channel."
+        : "Sender found. Building direct channel.");
+      notifyLinkOpened(session);
       await ensurePeerConnection(session);
       await maybeCreateOffer(session);
       break;
@@ -974,10 +1009,18 @@ async function handleServerEvent(session, event) {
 
 function syncRemotePeer(session, peers) {
   const remote = peers.find((peer) => peer.id !== session.peerId);
+  const previousRemotePeerId = session.remotePeerId;
   session.remotePeerId = remote ? remote.id : null;
   if (remote) {
+    if (previousRemotePeerId !== session.remotePeerId) {
+      session.linkOpenedToastShown = false;
+      session.validationToastShown = false;
+    }
     updateStatus(session, "linking", "readying");
-    updateSessionNote(session, "Peer found. Building direct channel.");
+    updateSessionNote(session, session.role === "owner"
+      ? "Peer opened the link. Building direct channel."
+      : "Sender found. Building direct channel.");
+    notifyLinkOpened(session);
   } else {
     updateStatus(session, "waiting", "waiting");
     updateSessionNote(session, session.role === "owner" ? "Waiting for someone to open the link." : "Waiting for sender.");
@@ -1006,8 +1049,12 @@ async function ensurePeerConnection(session) {
     if (state === "connected") {
       session.isConnected = true;
       updateStatus(session, "connected", "connected");
-      updateSessionNote(session, "Live encrypted link ready.");
-      notifySecretConnected(session);
+      updateSessionNote(session, session.role === "owner"
+        ? "Peer channel ready. Waiting for browser validation."
+        : "Live encrypted link ready.");
+      if (session.role !== "owner") {
+        notifySecretConnected(session);
+      }
       flushPendingSecret(session);
     } else if (state === "failed" || state === "disconnected" || state === "closed") {
       session.isConnected = false;
@@ -1054,8 +1101,13 @@ function bindDataChannel(session, channel) {
   channel.onopen = () => {
     session.isConnected = true;
     updateStatus(session, "connected", "connected");
-    updateSessionNote(session, "Live encrypted link ready.");
-    notifySecretConnected(session);
+    updateSessionNote(session, session.role === "owner"
+      ? "Peer channel ready. Waiting for browser validation."
+      : "Live encrypted link ready.");
+    if (session.role === "guest") {
+      void sendIdentityHello(session);
+      notifySecretConnected(session);
+    }
     if (session.role === "owner" && session.pendingSecret && !session.pendingSecret.active) {
       sendUnavailable(session);
       return;
@@ -1176,7 +1228,7 @@ async function postSignal(session, payload) {
 }
 
 async function flushPendingSecret(session) {
-  if (session.role !== "owner" || !session.pendingSecret || !session.isConnected || !session.baseKeyBytes || !session.channel) {
+  if (session.role !== "owner" || !session.pendingSecret || !session.isConnected || !session.baseKeyBytes || !session.channel || !session.peerValidated) {
     return;
   }
   if (!session.pendingSecret.active || session.pendingSecret.sent) {
@@ -1208,11 +1260,81 @@ async function handlePeerMessage(session, message) {
       session.receivedSecret = message;
       renderReceivedSecret(session, message);
       break;
+    case "identity":
+      await handleIdentityMessage(session, message);
+      break;
     case "control":
       handleControl(session, message);
       break;
     default:
       break;
+  }
+}
+
+async function handleIdentityMessage(session, message) {
+  if (message.action === "hello" && session.role === "owner") {
+    if (!message.browserId || !message.publicKey) {
+      showToast("Recipient validation failed.");
+      return;
+    }
+    const expectedBrowserId = await browserIdForPublicKey(message.publicKey);
+    if (expectedBrowserId !== message.browserId) {
+      showToast("Recipient validation failed.");
+      return;
+    }
+    session.remoteBrowserId = message.browserId;
+    session.remoteIdentityPublicKey = message.publicKey;
+    notifyValidationStarted(session);
+    await sendValidationChallenge(session);
+    return;
+  }
+
+  if (message.action === "ping" && session.role === "guest") {
+    const signature = await signValidationChallenge(message.challenge);
+    if (!signature) {
+      showToast("Browser validation unavailable.");
+      return;
+    }
+    session.channel?.send(JSON.stringify({
+      kind: "identity",
+      action: "pong",
+      browserId: appState.identity?.browserId || "",
+      challenge: message.challenge,
+      signature,
+    }));
+    return;
+  }
+
+  if (message.action === "pong" && session.role === "owner") {
+    const challengeMatches = !!message.challenge && session.validationChallenge === message.challenge;
+    const browserMatches = !session.remoteBrowserId || session.remoteBrowserId === message.browserId;
+    const signatureOK = challengeMatches
+      && browserMatches
+      && session.remoteIdentityPublicKey
+      && await verifyValidationChallenge(session.remoteIdentityPublicKey, message.challenge, message.signature);
+    if (!signatureOK) {
+      showToast(`Recipient validation failed${formatBrowserIdSuffix(session.remoteBrowserId)}.`);
+      await sendValidationChallenge(session);
+      return;
+    }
+    session.peerValidated = true;
+    session.validationChallenge = null;
+    updateSessionNote(session, "Recipient browser validated. Live encrypted link ready.");
+    showToast(`Recipient browser validated${formatBrowserIdSuffix(session.remoteBrowserId)}.`, {
+      action: {
+        label: "Show secret",
+        onClick: () => focusSessionCard(session),
+      },
+    });
+    session.channel?.send(JSON.stringify({ kind: "identity", action: "validated" }));
+    notifySecretConnected(session);
+    flushPendingSecret(session);
+    return;
+  }
+
+  if (message.action === "validated" && session.role === "guest") {
+    session.peerValidated = true;
+    showToast("Sender accepted this browser.");
   }
 }
 
@@ -1275,6 +1397,7 @@ function renderReceivedSecret(session, message) {
       node.querySelector("[data-secret-meta]").textContent = message.burnAfterRead ? "Read once. Deleted after opening." : "Opened.";
       actions.innerHTML = "";
       updateStatus(session, "open", "connected");
+      session.channel?.send(JSON.stringify({ kind: "control", action: "decrypt-success", id: message.id }));
       if (message.burnAfterRead) {
         session.channel.send(JSON.stringify({ kind: "control", action: "burn", id: message.id }));
       }
@@ -1282,6 +1405,12 @@ function renderReceivedSecret(session, message) {
       node.querySelector("[data-secret-meta]").textContent = message.authMode === "totp"
         ? "Could not decrypt. Check the authenticator code."
         : "Could not decrypt. Check the passphrase.";
+      session.channel?.send(JSON.stringify({
+        kind: "control",
+        action: "decrypt-failed",
+        id: message.id,
+        authMode: message.authMode,
+      }));
     }
   });
   actions.appendChild(read);
@@ -1352,6 +1481,25 @@ function handleControl(session, message) {
   }
   if (message.action === "burn") {
     markBurned(session);
+    return;
+  }
+  if (message.action === "decrypt-success" && session.role === "owner") {
+    showToast(`Recipient decrypted the secret${formatBrowserIdSuffix(session.remoteBrowserId)}.`, {
+      action: {
+        label: "Show secret",
+        onClick: () => focusSessionCard(session),
+      },
+    });
+    return;
+  }
+  if (message.action === "decrypt-failed" && session.role === "owner") {
+    const modeLabel = message.authMode === "totp" ? "authenticator code" : "passphrase";
+    showToast(`Recipient failed to decrypt with the ${modeLabel}${formatBrowserIdSuffix(session.remoteBrowserId)}.`, {
+      action: {
+        label: "Show secret",
+        onClick: () => focusSessionCard(session),
+      },
+    });
   }
 }
 
@@ -1428,6 +1576,14 @@ function resetPeerLink(session) {
   session.rtc = null;
   session.baseKeyBytes = null;
   session.isConnected = false;
+  session.peerValidated = false;
+  session.validationChallenge = null;
+  session.remoteBrowserId = null;
+  session.remoteIdentityPublicKey = null;
+  session.helloSent = false;
+  session.linkOpenedToastShown = false;
+  session.validationToastShown = false;
+  session.connectedToastShown = false;
 }
 
 function updateSessionNote(session, text) {
@@ -2114,12 +2270,50 @@ function notifySecretConnected(session) {
     return;
   }
   session.connectedToastShown = true;
-  showToast("Secret link is live.", {
+  showToast(session.role === "owner"
+    ? `Recipient browser is verified${formatBrowserIdSuffix(session.remoteBrowserId)}.`
+    : "Secret link is live.", {
     action: {
       label: "Show secret",
       onClick: () => focusSessionCard(session),
     },
   });
+}
+
+function notifyLinkOpened(session) {
+  if (session.role !== "owner" || session.linkOpenedToastShown || !session.remotePeerId) {
+    return;
+  }
+  session.linkOpenedToastShown = true;
+  showToast("Someone opened the link.", {
+    action: {
+      label: "Show secret",
+      onClick: () => focusSessionCard(session),
+    },
+  });
+}
+
+function notifyValidationStarted(session) {
+  if (session.role !== "owner" || session.validationToastShown) {
+    return;
+  }
+  session.validationToastShown = true;
+  showToast(`Recipient browser detected${formatBrowserIdSuffix(session.remoteBrowserId)}. Validating.`, {
+    action: {
+      label: "Show secret",
+      onClick: () => focusSessionCard(session),
+    },
+  });
+}
+
+function shortBrowserId(browserId) {
+  const normalized = String(browserId || "").trim();
+  return normalized ? normalized.slice(0, 8) : "";
+}
+
+function formatBrowserIdSuffix(browserId) {
+  const shortID = shortBrowserId(browserId);
+  return shortID ? ` (${shortID})` : "";
 }
 
 function showToast(message, options = {}) {
