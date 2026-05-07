@@ -774,21 +774,6 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 .browser-id-badge:active {
   transform: translateY(1px);
 }
-.footer-links {
-  display: flex;
-  justify-content: center;
-}
-.footer-links a {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-}
-.footer-links svg {
-  width: 16px;
-  height: 16px;
-  fill: currentColor;
-}
 .rules-list {
   margin: 0;
   padding-left: 18px;
