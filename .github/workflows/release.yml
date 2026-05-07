@@ -65,7 +65,7 @@ jobs:
           fi
 
       - name: Upload packaged artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shhx-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*.${{ matrix.archive }}
