@@ -110,6 +110,14 @@ button, input, textarea, select, summary { outline-color: var(--accent); }
   gap: 18px;
   justify-items: stretch;
 }
+.guest-create-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+.guest-create-button {
+  align-self: center;
+}
 .feed-composer {
   width: 100%;
   position: sticky;
@@ -226,9 +234,9 @@ body.app-ready .boot-splash {
   line-height: 1;
 }
 .bulk-count-badge {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 7px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -810,8 +818,9 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .browser-id-badge {
   max-width: 164px;
-  height: 30px;
-  padding: 0 11px;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);

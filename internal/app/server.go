@@ -133,12 +133,7 @@ func shareCodeFromRequest(r *http.Request) (string, bool) {
 		return "", false
 	}
 
-	code := strings.ToUpper(trimmed)
-	if !validRoomCode(code) {
-		return "", false
-	}
-
-	return code, true
+	return strings.ToUpper(trimmed), true
 }
 
 func (s *Server) handlePreviewSVG(w http.ResponseWriter, r *http.Request) {

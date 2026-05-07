@@ -339,17 +339,15 @@ function showMissingSharedSecret(status, shareCode) {
       eyebrow.textContent = "secret";
     }
     if (note) {
-      note.textContent = status === 404
-        ? `No secret was found for "${shareCode}".`
-        : status === 409
-          ? `The secret "${shareCode}" is not available right now.`
-          : `The secret "${shareCode}" could not be opened.`;
+      note.textContent = status === 409
+        ? `The secret "${shareCode}" is not available right now.`
+        : `The secret "${shareCode}" is not available.`;
     }
   }
   showToast(
-    status === 404
-      ? `Secret ${shareCode} was not found.`
-      : `Secret ${shareCode} could not be opened.`,
+    status === 409
+      ? `Secret ${shareCode} is not available right now.`
+      : `Secret ${shareCode} is not available.`,
   );
 }
 
@@ -1739,8 +1737,8 @@ function syncBulkActions() {
     return;
   }
   toolbar.hidden = false;
-  note.hidden = false;
   row.hidden = false;
+  note.hidden = false;
   note.textContent = String(selected.length);
   enable.disabled = selected.every((session) => session.pendingSecret?.active !== false);
   disable.disabled = selected.every((session) => session.pendingSecret?.active === false);
