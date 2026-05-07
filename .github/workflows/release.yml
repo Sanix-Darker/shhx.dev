@@ -14,21 +14,22 @@ jobs:
     strategy:
       matrix:
         include:
-          - goos: linux
-            goarch: amd64
-            archive: tar.gz
+          # Temporary: keep releases focused on the production Linux arm64 target only.
+          # - goos: linux
+          #   goarch: amd64
+          #   archive: tar.gz
           - goos: linux
             goarch: arm64
             archive: tar.gz
-          - goos: darwin
-            goarch: amd64
-            archive: tar.gz
-          - goos: darwin
-            goarch: arm64
-            archive: tar.gz
-          - goos: windows
-            goarch: amd64
-            archive: zip
+          # - goos: darwin
+          #   goarch: amd64
+          #   archive: tar.gz
+          # - goos: darwin
+          #   goarch: arm64
+          #   archive: tar.gz
+          # - goos: windows
+          #   goarch: amd64
+          #   archive: zip
 
     steps:
       - name: Checkout
