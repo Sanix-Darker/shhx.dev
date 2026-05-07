@@ -1876,11 +1876,15 @@ function syncFullscreenButtonState(isOpen) {
 function syncFeedEmptyState() {
   const feed = document.querySelector("#feed");
   const empty = document.querySelector("#empty-feed");
+  const searchWrap = document.querySelector("#feed-search-wrap");
   if (!feed || !empty) {
     return;
   }
   const cards = feed.querySelectorAll(".secret-card");
   empty.hidden = cards.length > 0;
+  if (searchWrap) {
+    searchWrap.hidden = cards.length === 0;
+  }
 }
 
 function persistLocalSecret(secret) {
