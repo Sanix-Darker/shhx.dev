@@ -2434,6 +2434,87 @@ async function decryptLocalValue(payload) {
   return textDecoder.decode(plaintext);
 }
 
+async function importIdentityPrivateKey() {
+  if (!appState.identity?.privateKey) {
+    return null;
+  }
+  return crypto.subtle.importKey(
+    "jwk",
+    appState.identity.privateKey,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+}
+
+async function importIdentityPublicKey(publicKey) {
+  if (!publicKey) {
+    return null;
+  }
+  return crypto.subtle.importKey(
+    "jwk",
+    publicKey,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"],
+  );
+}
+
+function randomValidationChallenge() {
+  return bytesToBase64(crypto.getRandomValues(new Uint8Array(24)));
+}
+
+async function signValidationChallenge(challenge) {
+  const privateKey = await importIdentityPrivateKey();
+  if (!privateKey || !challenge) {
+    return "";
+  }
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    privateKey,
+    textEncoder.encode(challenge),
+  );
+  return bytesToBase64(new Uint8Array(signature));
+}
+
+async function verifyValidationChallenge(publicKey, challenge, signature) {
+  const verifyKey = await importIdentityPublicKey(publicKey);
+  if (!verifyKey || !challenge || !signature) {
+    return false;
+  }
+  return crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    verifyKey,
+    base64ToBytes(signature),
+    textEncoder.encode(challenge),
+  );
+}
+
+async function sendIdentityHello(session) {
+  if (session.role !== "guest" || session.helloSent || !session.channel || !appState.identity?.browserId || !appState.identity?.publicKey) {
+    return;
+  }
+  session.helloSent = true;
+  session.channel.send(JSON.stringify({
+    kind: "identity",
+    action: "hello",
+    browserId: appState.identity.browserId,
+    publicKey: appState.identity.publicKey,
+  }));
+}
+
+async function sendValidationChallenge(session) {
+  if (session.role !== "owner" || !session.channel || !session.remoteIdentityPublicKey) {
+    return;
+  }
+  session.validationChallenge = randomValidationChallenge();
+  session.channel.send(JSON.stringify({
+    kind: "identity",
+    action: "ping",
+    challenge: session.validationChallenge,
+  }));
+}
+
 async function deriveSecretFactor(pendingSecret) {
   if (pendingSecret.authMode === "passphrase") {
     return pendingSecret.localPassphrase ? decryptLocalValue(pendingSecret.localPassphrase) : "";
