@@ -261,7 +261,68 @@ body.app-ready .boot-splash {
 }
 .hero-bubble, .send-bubble, .room-bubble { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-xl); box-shadow: var(--shadow); }
 .hero-bubble { padding: 24px; }
+.hero-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .eyebrow { margin: 0 0 8px; text-transform: lowercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.78rem; }
+.hero-head-row .eyebrow { margin-bottom: 0; }
+.network-indicator {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+.network-indicator-dot,
+.network-indicator::before,
+.network-indicator::after {
+  border-radius: 999px;
+}
+.network-indicator-dot {
+  width: 8px;
+  height: 8px;
+  background: #68d391;
+  box-shadow: 0 0 0 1px rgba(104, 211, 145, 0.22);
+}
+.network-indicator::before,
+.network-indicator::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid rgba(104, 211, 145, 0.26);
+  opacity: 0;
+  transform: scale(0.65);
+}
+.network-indicator::before {
+  animation: statusWave 1.8s ease-out infinite;
+}
+.network-indicator::after {
+  animation: statusWave 1.8s ease-out infinite 0.9s;
+}
+.network-indicator[data-state="degraded"] .network-indicator-dot {
+  background: #d4b04f;
+  box-shadow: 0 0 0 1px rgba(212, 176, 79, 0.22);
+}
+.network-indicator[data-state="degraded"]::before,
+.network-indicator[data-state="degraded"]::after {
+  border-color: rgba(212, 176, 79, 0.24);
+}
+.network-indicator[data-state="offline"] .network-indicator-dot {
+  background: #c95b5b;
+  box-shadow: 0 0 0 1px rgba(201, 91, 91, 0.22);
+}
+.network-indicator[data-state="offline"]::before,
+.network-indicator[data-state="offline"]::after {
+  border-color: rgba(201, 91, 91, 0.22);
+}
 h1, h2, pre, p { margin: 0; }
 h1, h2 { font-family: "Avenir Next Demi Bold", "Segoe UI Semibold", sans-serif; font-weight: 700; line-height: 1.04; }
 h1 { font-size: clamp(1.08rem, 2.64vw, 1.85rem); max-width: 14ch; }
@@ -866,6 +927,17 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   }
 }
 
+@keyframes statusWave {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.65);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .secret-card,
   .secret-card.is-removing,
@@ -879,6 +951,11 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
     transition: none !important;
     transform: none !important;
     filter: none !important;
+  }
+  .network-indicator::before,
+  .network-indicator::after {
+    animation: none !important;
+    opacity: 0 !important;
   }
 }
 

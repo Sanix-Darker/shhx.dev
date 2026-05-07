@@ -22,6 +22,7 @@ const appState = {
   composerPendingCollapsed: null,
   composerCollapseController: null,
   composerSearchRestoreCollapsed: null,
+  networkIndicatorBound: false,
   pendingCreateAttempts: new Map(),
 };
 const LOCAL_VAULT_KEY_STORAGE = "shhx.localVaultKey";
@@ -44,6 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupFeedScrollMotion();
     setupComposerCollapse();
     setupConnectivityRecovery();
+    setupConnectivityIndicator();
     syncFeedEmptyState();
     await restoreLocalSecrets();
     await autoJoinSharedLink();
@@ -1659,6 +1661,7 @@ function updateStatus(session, label, state) {
   const pill = session.node.querySelector("[data-room-status]");
   pill.textContent = label;
   pill.dataset.state = state;
+  syncConnectivityIndicator();
 }
 
 function updateComposerNote(text) {
@@ -1832,6 +1835,7 @@ function focusSessionCard(session) {
   session.node.classList.add("is-foreground");
   appState.activeCardFocusRoomCode = session.roomCode;
   openOverlay();
+  syncConnectivityIndicator();
 }
 
 function unfocusSessionCard(session) {
@@ -1840,6 +1844,7 @@ function unfocusSessionCard(session) {
     appState.activeCardFocusRoomCode = null;
   }
   closeOverlayIfIdle();
+  syncConnectivityIndicator();
 }
 
 function closeActiveUI() {
@@ -1995,12 +2000,86 @@ function setupConnectivityRecovery() {
       session.channel?.close();
       session.rtc?.close();
     });
+    syncConnectivityIndicator();
   });
   window.addEventListener("pagehide", () => {
     appState.sessions.forEach((session) => {
       notifySessionLeaveSoon(session);
     });
+    syncConnectivityIndicator();
   });
+}
+
+function setupConnectivityIndicator() {
+  if (appState.networkIndicatorBound) {
+    return;
+  }
+  appState.networkIndicatorBound = true;
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  window.addEventListener("online", syncConnectivityIndicator);
+  window.addEventListener("offline", syncConnectivityIndicator);
+  connection?.addEventListener?.("change", syncConnectivityIndicator);
+  syncConnectivityIndicator();
+}
+
+function syncConnectivityIndicator() {
+  const indicator = document.querySelector("#network-indicator");
+  if (!indicator) {
+    return;
+  }
+  const session = currentConnectivitySession();
+  const sessionLabel = session?.node?.querySelector("[data-room-status]")?.textContent?.trim() || "no session";
+  const sessionTitle = session
+    ? `Session ${session.roomCode}: ${sessionLabel}.`
+    : "No session yet.";
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const online = navigator.onLine !== false;
+  const effectiveType = String(connection?.effectiveType || "");
+  const rtt = Number(connection?.rtt || 0);
+  const downlink = Number(connection?.downlink || 0);
+  const degradedByNetwork = Boolean(
+    connection?.saveData
+      || effectiveType === "slow-2g"
+      || effectiveType === "2g"
+      || effectiveType === "3g"
+      || (rtt > 0 && rtt > 450)
+      || (downlink > 0 && downlink < 1.2),
+  );
+  const degradedBySession = online && /^(offline|failed)$/i.test(sessionLabel);
+
+  const state = !online ? "offline" : (degradedByNetwork || degradedBySession ? "degraded" : "online");
+  const heading = state === "offline"
+    ? "Offline."
+    : state === "degraded"
+      ? "Unstable connection."
+      : "Online.";
+  const title = `${heading} ${sessionTitle}`;
+  indicator.dataset.state = state;
+  indicator.title = title;
+  indicator.setAttribute("aria-label", title);
+}
+
+function currentConnectivitySession() {
+  if (appState.activeCardFocusRoomCode && appState.sessions.has(appState.activeCardFocusRoomCode)) {
+    return appState.sessions.get(appState.activeCardFocusRoomCode);
+  }
+  const shareCode = String(document.body.dataset.shareCode || "").trim().toUpperCase();
+  if (shareCode && appState.sessions.has(shareCode)) {
+    return appState.sessions.get(shareCode);
+  }
+  const selected = selectedOwnerSessions();
+  if (selected.length > 0) {
+    return selected[0];
+  }
+  const feedCards = document.querySelectorAll("#feed .secret-card[data-room-code]");
+  for (const card of feedCards) {
+    const roomCode = card.dataset.roomCode;
+    if (roomCode && appState.sessions.has(roomCode)) {
+      return appState.sessions.get(roomCode);
+    }
+  }
+  return null;
 }
 
 function applyFeedFilter() {
