@@ -67,11 +67,101 @@ func TestHubRoomCapacity(t *testing.T) {
 	hub := NewHub()
 	roomCode := hub.CreateRoom("owner-1", "Owner")
 
+	ownerEvents, ownerCleanup, err := hub.Subscribe(roomCode, "owner-1")
+	if err != nil {
+		t.Fatalf("subscribe owner: %v", err)
+	}
+	defer ownerCleanup()
+	expectEvent(t, ownerEvents)
+
 	if err := hub.JoinRoom(roomCode, "guest-1", "Guest"); err != nil {
 		t.Fatalf("first join: %v", err)
 	}
+	expectEvent(t, ownerEvents)
+
+	guestEvents, guestCleanup, err := hub.Subscribe(roomCode, "guest-1")
+	if err != nil {
+		t.Fatalf("subscribe guest: %v", err)
+	}
+	defer guestCleanup()
+	expectEvent(t, guestEvents)
+
 	if err := hub.JoinRoom(roomCode, "guest-2", "Extra"); err != ErrRoomFull {
 		t.Fatalf("expected ErrRoomFull, got %v", err)
+	}
+}
+
+func TestHubReplacesOrphanGuest(t *testing.T) {
+	hub := NewHub()
+	roomCode := hub.CreateRoom("owner-1", "Owner")
+
+	ownerEvents, ownerCleanup, err := hub.Subscribe(roomCode, "owner-1")
+	if err != nil {
+		t.Fatalf("subscribe owner: %v", err)
+	}
+	defer ownerCleanup()
+	expectEvent(t, ownerEvents)
+
+	if err := hub.JoinRoom(roomCode, "guest-preview", "Preview"); err != nil {
+		t.Fatalf("join preview guest: %v", err)
+	}
+	joined := expectEvent(t, ownerEvents)
+	if joined.Type != "peer-joined" {
+		t.Fatalf("expected peer-joined for preview, got %s", joined.Type)
+	}
+
+	if err := hub.JoinRoom(roomCode, "guest-real", "Recipient"); err != nil {
+		t.Fatalf("replace orphan guest: %v", err)
+	}
+
+	left := expectEvent(t, ownerEvents)
+	if left.Type != "peer-left" {
+		t.Fatalf("expected peer-left for orphan guest, got %s", left.Type)
+	}
+	joined = expectEvent(t, ownerEvents)
+	if joined.Type != "peer-joined" {
+		t.Fatalf("expected peer-joined for replacement guest, got %s", joined.Type)
+	}
+
+	guestEvents, guestCleanup, err := hub.Subscribe(roomCode, "guest-real")
+	if err != nil {
+		t.Fatalf("subscribe replacement guest: %v", err)
+	}
+	defer guestCleanup()
+	expectEvent(t, guestEvents)
+}
+
+func TestHubRemovesGuestWhenLastStreamCloses(t *testing.T) {
+	hub := NewHub()
+	roomCode := hub.CreateRoom("owner-1", "Owner")
+
+	ownerEvents, ownerCleanup, err := hub.Subscribe(roomCode, "owner-1")
+	if err != nil {
+		t.Fatalf("subscribe owner: %v", err)
+	}
+	defer ownerCleanup()
+	expectEvent(t, ownerEvents)
+
+	if err := hub.JoinRoom(roomCode, "guest-1", "Guest"); err != nil {
+		t.Fatalf("join room: %v", err)
+	}
+	expectEvent(t, ownerEvents)
+
+	guestEvents, guestCleanup, err := hub.Subscribe(roomCode, "guest-1")
+	if err != nil {
+		t.Fatalf("subscribe guest: %v", err)
+	}
+	expectEvent(t, guestEvents)
+
+	guestCleanup()
+
+	left := expectEvent(t, ownerEvents)
+	if left.Type != "peer-left" {
+		t.Fatalf("expected peer-left after guest cleanup, got %s", left.Type)
+	}
+
+	if err := hub.JoinRoom(roomCode, "guest-2", "Replacement"); err != nil {
+		t.Fatalf("join replacement guest: %v", err)
 	}
 }
 

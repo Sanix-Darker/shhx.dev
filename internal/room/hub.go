@@ -100,6 +100,7 @@ func (h *Hub) JoinRoom(code, peerID, displayName string) error {
 	if !ok {
 		return ErrRoomNotFound
 	}
+	h.evictOrphanGuestsLocked(state)
 	if len(state.peers) >= 2 {
 		return ErrRoomFull
 	}
@@ -150,6 +151,17 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 		if state, ok := h.rooms[code]; ok {
 			if peer, ok := state.peers[peerID]; ok {
 				delete(peer.streams, sub)
+				if peer.role == RoleGuest && len(peer.streams) == 0 {
+					delete(state.peers, peerID)
+					state.lastActive = time.Now()
+					h.broadcastLocked(state, Event{
+						Type: "peer-left",
+						Data: map[string]string{"id": peerID},
+					})
+					if len(state.peers) == 0 {
+						delete(h.rooms, code)
+					}
+				}
 			}
 		}
 		close(sub.ch)
@@ -231,6 +243,22 @@ func (h *Hub) Leave(code, peerID string) {
 
 	if len(state.peers) == 0 {
 		delete(h.rooms, code)
+	}
+}
+
+func (h *Hub) evictOrphanGuestsLocked(state *roomState) {
+	for id, peer := range state.peers {
+		if peer.role != RoleGuest {
+			continue
+		}
+		if len(peer.streams) > 0 {
+			continue
+		}
+		delete(state.peers, id)
+		h.broadcastLocked(state, Event{
+			Type: "peer-left",
+			Data: map[string]string{"id": id},
+		})
 	}
 }
 
