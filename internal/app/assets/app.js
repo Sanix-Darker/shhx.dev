@@ -21,6 +21,7 @@ const appState = {
   composerAnimating: false,
   composerPendingCollapsed: null,
   composerCollapseController: null,
+  composerSearchRestoreCollapsed: null,
   pendingCreateAttempts: new Map(),
 };
 const LOCAL_VAULT_KEY_STORAGE = "shhx.localVaultKey";
@@ -136,10 +137,19 @@ async function initIdentity() {
       localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(record));
     }
     appState.identity = record;
-    statusNode.textContent = `browser id: ${record.browserId}`;
+    statusNode.textContent = record.browserId;
+    statusNode.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(record.browserId);
+        showToast("Browser id copied.");
+      } catch (_error) {
+        showToast("Browser id copy failed.");
+      }
+    });
   } catch (error) {
     console.error(error);
-    statusNode.textContent = "browser id unavailable.";
+    statusNode.textContent = "unavailable";
+    statusNode.disabled = true;
   }
 }
 
@@ -1717,7 +1727,7 @@ function syncBulkActions() {
     toolbar.hidden = true;
     note.hidden = true;
     row.hidden = true;
-    note.textContent = "No secrets selected.";
+    note.textContent = "0";
     enable.disabled = true;
     disable.disabled = true;
     email.disabled = true;
@@ -1728,7 +1738,7 @@ function syncBulkActions() {
   toolbar.hidden = false;
   note.hidden = false;
   row.hidden = false;
-  note.textContent = selected.length === 1 ? "1 secret selected." : `${selected.length} secrets selected.`;
+  note.textContent = String(selected.length);
   enable.disabled = selected.every((session) => session.pendingSecret?.active !== false);
   disable.disabled = selected.every((session) => session.pendingSecret?.active === false);
   email.disabled = selected.length === 0;
@@ -1944,10 +1954,28 @@ function setupFeedSearch() {
   if (!input) {
     return;
   }
+  const syncSearchComposerState = () => {
+    const query = String(input.value || "").trim();
+    if (query) {
+      if (appState.composerSearchRestoreCollapsed === null) {
+        appState.composerSearchRestoreCollapsed = appState.composerCollapsed;
+      }
+      appState.composerCollapseController?.(true);
+      return;
+    }
+    if (appState.composerSearchRestoreCollapsed !== null) {
+      const restoreCollapsed = appState.composerSearchRestoreCollapsed;
+      appState.composerSearchRestoreCollapsed = null;
+      appState.composerCollapseController?.(restoreCollapsed);
+    }
+  };
+
   input.addEventListener("input", () => {
+    syncSearchComposerState();
     applyFeedFilter();
   });
   input.addEventListener("keyup", () => {
+    syncSearchComposerState();
     applyFeedFilter();
   });
 }

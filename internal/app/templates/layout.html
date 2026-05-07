@@ -61,43 +61,6 @@
         <details class="send-bubble composer-bubble feed-composer" id="composer" open>
           <summary title="Click to open or close">// NEW SECRET</summary>
           <div class="composer-body">
-            <div class="composer-toolbar" id="composer-toolbar" hidden>
-              <p class="signal-note" id="bulk-selection-note" hidden>No secrets selected.</p>
-              <div class="bulk-actions-row" id="bulk-actions-row" hidden>
-                <button type="button" class="icon-button bulk-action-button" id="bulk-enable-button" aria-label="Turn on selected secrets" title="Turn on selected secrets">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M12 3v8" />
-                    <path d="M7.5 6.75a7 7 0 1 0 9 0" />
-                  </svg>
-                  <span class="sr-only">Turn on selected secrets</span>
-                </button>
-                <button type="button" class="icon-button bulk-action-button" id="bulk-disable-button" aria-label="Turn off selected secrets" title="Turn off selected secrets">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M12 3v8" />
-                    <path d="M7.5 6.75a7 7 0 1 0 9 0" />
-                    <path d="M4 4l16 16" />
-                  </svg>
-                  <span class="sr-only">Turn off selected secrets</span>
-                </button>
-                <button type="button" class="icon-button bulk-action-button" id="bulk-email-button" aria-label="Send selected secrets by email" title="Send selected secrets by email">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <rect x="3" y="5" width="18" height="14" rx="2" />
-                    <path d="m5 8 7 5 7-5" />
-                  </svg>
-                  <span class="sr-only">Send selected secrets by email</span>
-                </button>
-                <button type="button" class="icon-button bulk-action-button danger-button" id="bulk-delete-button" aria-label="Delete selected secrets" title="Delete selected secrets">
-                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path d="M4 7h16" />
-                    <path d="M9 7V4h6v3" />
-                    <path d="M7 7l1 12h8l1-12" />
-                    <path d="M10 11v5" />
-                    <path d="M14 11v5" />
-                  </svg>
-                  <span class="sr-only">Delete selected secrets</span>
-                </button>
-              </div>
-            </div>
             <div class="editor-head">
               <input id="create-burn-toggle" type="checkbox" checked hidden>
               <input id="create-totp-toggle" type="checkbox" hidden>
@@ -202,6 +165,44 @@
                   </svg>
                   <span class="sr-only">Open fullscreen editor</span>
                 </button>
+                <div class="bulk-inline-tools" id="composer-toolbar" hidden>
+                  <span class="bulk-separator" aria-hidden="true">|</span>
+                  <span class="bulk-count-badge" id="bulk-selection-note" hidden aria-label="Selected secrets count">0</span>
+                  <div class="bulk-actions-row" id="bulk-actions-row" hidden>
+                    <button type="button" class="icon-button bulk-action-button" id="bulk-enable-button" aria-label="Turn on selected secrets" title="Turn on selected secrets">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 3v8" />
+                        <path d="M7.5 6.75a7 7 0 1 0 9 0" />
+                      </svg>
+                      <span class="sr-only">Turn on selected secrets</span>
+                    </button>
+                    <button type="button" class="icon-button bulk-action-button" id="bulk-disable-button" aria-label="Turn off selected secrets" title="Turn off selected secrets">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 3v8" />
+                        <path d="M7.5 6.75a7 7 0 1 0 9 0" />
+                        <path d="M4 4l16 16" />
+                      </svg>
+                      <span class="sr-only">Turn off selected secrets</span>
+                    </button>
+                    <button type="button" class="icon-button bulk-action-button" id="bulk-email-button" aria-label="Send selected secrets by email" title="Send selected secrets by email">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <rect x="3" y="5" width="18" height="14" rx="2" />
+                        <path d="m5 8 7 5 7-5" />
+                      </svg>
+                      <span class="sr-only">Send selected secrets by email</span>
+                    </button>
+                    <button type="button" class="icon-button bulk-action-button danger-button" id="bulk-delete-button" aria-label="Delete selected secrets" title="Delete selected secrets">
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M4 7h16" />
+                        <path d="M9 7V4h6v3" />
+                        <path d="M7 7l1 12h8l1-12" />
+                        <path d="M10 11v5" />
+                        <path d="M14 11v5" />
+                      </svg>
+                      <span class="sr-only">Delete selected secrets</span>
+                    </button>
+                  </div>
+                </div>
               </div>
               <button type="button" class="create-secret-button" id="create-secret-button" aria-label="Create secret" title="Create secret">
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -253,20 +254,11 @@
 
         <div class="compose-meta">
           <details class="dock-item" open>
-            <summary title="Click to open or close">// BROWSER</summary>
-            <div class="dock-body">
-              <ul class="rules-list browser-list">
-                <li id="identity-state">Preparing local browser id.</li>
-                <li>no login or signup</li>
-                <li>id stays in this browser</li>
-              </ul>
-            </div>
-          </details>
-          <details class="dock-item" open>
             <summary title="Click to open or close">// HOW IT WORKS</summary>
             <div class="dock-body">
               <ul class="rules-list">
                 <li>live links only</li>
+                <li>no login or signup</li>
                 <li>sender and receiver must stay online</li>
                 <li>delivery starts only when the peer channel is ready</li>
                 <li>no database and no server-side secret storage</li>
@@ -276,7 +268,8 @@
         </div>
 
         <footer class="site-footer">
-          <p class="theme-footer-action">
+          <p class="footer-meta-row">
+            <button type="button" class="browser-id-badge" id="identity-state" aria-label="Copy browser id" title="Copy browser id">...</button>
             <button type="button" class="icon-button" id="theme-toggle-button" aria-label="Switch to light theme" title="Switch to light theme">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
