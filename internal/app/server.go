@@ -111,7 +111,16 @@ func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	if _, err := io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="16" fill="#050505"/>
+  <rect x="15" y="28" width="34" height="24" rx="6" fill="none" stroke="#F2F2F2" stroke-width="4"/>
+  <path d="M22 28v-6c0-6 4-10 10-10s10 4 10 10v6" fill="none" stroke="#F2F2F2" stroke-width="4" stroke-linecap="round"/>
+</svg>`); err != nil {
+		return
+	}
 }
 
 func shareCodeFromRequest(r *http.Request) (string, bool) {

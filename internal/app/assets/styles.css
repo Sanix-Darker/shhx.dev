@@ -1,18 +1,18 @@
 :root {
   color-scheme: dark;
-  --bg: #101010;
-  --panel: rgba(22, 22, 22, 0.94);
-  --panel-soft: rgba(20, 27, 25, 0.72);
-  --text: #efefef;
-  --muted: #aaaaaa;
-  --line: rgba(255, 255, 255, 0.1);
-  --accent: #d8d8d8;
-  --accent-soft: rgba(255, 255, 255, 0.08);
-  --alert: #c8c8c8;
-  --shadow: 0 24px 64px rgba(0, 0, 0, 0.32);
-  --input: #171717;
-  --surface: rgba(34, 34, 34, 0.9);
-  --surface-strong: rgba(40, 40, 40, 0.96);
+  --bg: #050505;
+  --panel: rgba(11, 11, 11, 0.96);
+  --panel-soft: rgba(9, 9, 9, 0.84);
+  --text: #f2f2f2;
+  --muted: #8b8b8b;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #d6d6d6;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --alert: #bfbfbf;
+  --shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+  --input: #0c0c0c;
+  --surface: rgba(19, 19, 19, 0.94);
+  --surface-strong: rgba(24, 24, 24, 0.98);
   --radius-xl: 32px;
   --radius-lg: 24px;
 }
@@ -283,7 +283,7 @@ textarea, .share-link-input {
   transition: border-color 180ms ease, transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 textarea:focus, .share-link-input:focus { border-color: rgba(255, 255, 255, 0.2); background: var(--surface-strong); transform: translateY(-1px); }
-textarea { resize: vertical; min-height: 110px; line-height: 1.5; }
+textarea { resize: vertical; min-height: 110px; max-height: 34vh; line-height: 1.5; overflow: auto; }
 .editor-shell {
   position: relative;
   display: grid;
@@ -293,9 +293,11 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.5; }
   overflow: clip;
   border: 1px solid var(--line);
   background: var(--surface-strong);
+  max-height: 34vh;
 }
 .editor-shell textarea {
   min-height: 118px;
+  max-height: 34vh;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -306,6 +308,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.5; }
 }
 .feed-composer.is-fullscreen-panel .editor-shell {
   min-height: min(48vh, 100%);
+  max-height: min(48vh, 100%);
 }
 .editor-shell textarea:focus {
   transform: none;
@@ -331,6 +334,7 @@ textarea { resize: vertical; min-height: 110px; line-height: 1.5; }
 }
 .feed-composer.is-fullscreen-panel .editor-shell textarea {
   min-height: min(48vh, calc(75vh - 224px));
+  max-height: min(48vh, calc(75vh - 224px));
   padding-top: 18px;
   padding-bottom: 18px;
 }
