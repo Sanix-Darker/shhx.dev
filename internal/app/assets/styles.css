@@ -996,6 +996,9 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   .compose-meta {
     grid-template-columns: 1fr;
   }
+  .how-it-works-item {
+    display: none;
+  }
   .compact-grid { grid-template-columns: 1fr; }
 }
 
