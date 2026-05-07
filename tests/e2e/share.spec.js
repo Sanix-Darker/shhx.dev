@@ -83,7 +83,12 @@ test.describe("live share flow", () => {
 });
 
 async function createSecret(page, options) {
-  await page.locator("#create-secret-input").fill(options.secret);
+  const composerInput = page.locator("#create-secret-input");
+  if (!(await composerInput.isVisible())) {
+    await page.locator("#composer > summary").click();
+    await expect(composerInput).toBeVisible();
+  }
+  await composerInput.fill(options.secret);
   if (options.hint) {
     await page.locator("#create-hint-input").fill(options.hint);
   }
