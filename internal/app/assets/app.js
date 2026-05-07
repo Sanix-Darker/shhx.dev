@@ -2287,6 +2287,13 @@ function setupComposerCollapse() {
     return;
   }
 
+  appState.composerCollapsed = composer.classList.contains("is-collapsed");
+  if (composerBody && appState.composerCollapsed) {
+    composerBody.classList.add("is-hidden");
+    composerBody.style.display = "none";
+    composerBody.style.height = "0px";
+  }
+
   const setComposerCollapsed = (collapsed) => {
     if (!composerBody) {
       return;
