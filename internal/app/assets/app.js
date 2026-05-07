@@ -985,19 +985,24 @@ async function handleServerEvent(session, event) {
       session.remotePeerId = event.data.id;
       session.linkOpenedToastShown = false;
       session.validationToastShown = false;
-      updateStatus(session, "linking", "readying");
+      updateStatus(session, "handshake", "readying");
       updateSessionNote(session, session.role === "owner"
-        ? "Peer opened the link. Building direct channel."
-        : "Sender found. Building direct channel.");
+        ? "Recipient opened the link. Establishing live channel."
+        : "Sender found. Establishing live channel.");
       notifyLinkOpened(session);
       await ensurePeerConnection(session);
       await maybeCreateOffer(session);
       break;
     case "peer-left":
+      const hadConnectedPeer = session.isConnected || session.peerValidated;
       session.remotePeerId = null;
       resetPeerLink(session);
       updateStatus(session, "waiting", "waiting");
-      updateSessionNote(session, "Peer left.");
+      updateSessionNote(session, session.role === "owner"
+        ? hadConnectedPeer
+          ? "Recipient left. Waiting for another open."
+          : "Previous opener cleared. Waiting for recipient."
+        : "Sender left. Waiting for sender.");
       break;
     case "signal":
       await handleSignal(session, event.data);
@@ -1016,14 +1021,14 @@ function syncRemotePeer(session, peers) {
       session.linkOpenedToastShown = false;
       session.validationToastShown = false;
     }
-    updateStatus(session, "linking", "readying");
+    updateStatus(session, "handshake", "readying");
     updateSessionNote(session, session.role === "owner"
-      ? "Peer opened the link. Building direct channel."
-      : "Sender found. Building direct channel.");
+      ? "Recipient opened the link. Establishing live channel."
+      : "Sender found. Establishing live channel.");
     notifyLinkOpened(session);
   } else {
     updateStatus(session, "waiting", "waiting");
-    updateSessionNote(session, session.role === "owner" ? "Waiting for someone to open the link." : "Waiting for sender.");
+    updateSessionNote(session, session.role === "owner" ? "Waiting for recipient to open the link." : "Waiting for sender to come online.");
   }
 }
 
