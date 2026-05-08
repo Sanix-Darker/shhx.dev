@@ -144,9 +144,7 @@ body.editor-fullscreen-open .feed-composer {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.2);
 }
 .feed-composer.is-collapsed .composer-body {
-  opacity: 0;
-  transform: translateY(-8px);
-  pointer-events: none;
+  display: none;
 }
 .feed > * {
   width: 100%;
@@ -190,31 +188,36 @@ body.app-ready .boot-splash {
 }
 .bulk-bubble .bulk-head,
 .bulk-bubble .bulk-actions-row,
-.composer-body {
+.composer-body-inner {
   padding: 0 18px 18px;
 }
 .composer-body {
   display: grid;
-  gap: 12px;
-  height: auto;
   opacity: 1;
   transform: translateY(0);
   overflow: hidden;
+  min-height: 0;
   transform-origin: top center;
-  will-change: height, opacity, transform;
-  transition: height 320ms cubic-bezier(0.22, 0.8, 0.2, 1), opacity 220ms ease, transform 220ms ease;
+  will-change: opacity, transform;
+  transition: opacity 220ms ease, transform 220ms ease;
 }
-.composer-body.is-hidden {
-  display: none;
+.composer-body-inner {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 .feed-composer.is-fullscreen-panel .composer-body {
   display: grid;
-  height: calc(75vh - 56px);
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: none;
+}
+.feed-composer.is-fullscreen-panel .composer-body-inner {
   min-height: 0;
   overflow: auto;
   padding-bottom: 22px;
-  opacity: 1;
-  transform: none;
 }
 .composer-toolbar {
   display: inline-flex;
@@ -367,7 +370,7 @@ textarea, .share-link-input {
   transition: border-color 180ms ease, transform 180ms ease, background 180ms ease, box-shadow 180ms ease;
 }
 textarea:focus, .share-link-input:focus { border-color: rgba(255, 255, 255, 0.2); background: var(--surface-strong); transform: translateY(-1px); }
-textarea { resize: vertical; min-height: 110px; max-height: 34vh; line-height: 1.5; overflow: auto; }
+textarea { resize: none; min-height: 0; line-height: 1.5; overflow: auto; }
 .editor-shell {
   position: relative;
   display: grid;
@@ -377,11 +380,11 @@ textarea { resize: vertical; min-height: 110px; max-height: 34vh; line-height: 1
   overflow: clip;
   border: 1px solid var(--line);
   background: var(--surface-strong);
-  max-height: 34vh;
 }
 .editor-shell textarea {
-  min-height: 118px;
-  max-height: 34vh;
+  height: clamp(148px, 26vh, 220px);
+  min-height: clamp(148px, 26vh, 220px);
+  max-height: clamp(148px, 26vh, 220px);
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -391,8 +394,8 @@ textarea { resize: vertical; min-height: 110px; max-height: 34vh; line-height: 1
   padding-left: 0;
 }
 .feed-composer.is-fullscreen-panel .editor-shell {
-  min-height: min(48vh, 100%);
-  max-height: min(48vh, 100%);
+  min-height: min(44vh, calc(75vh - 248px));
+  max-height: min(44vh, calc(75vh - 248px));
 }
 .editor-shell textarea:focus {
   transform: none;
@@ -417,8 +420,9 @@ textarea { resize: vertical; min-height: 110px; max-height: 34vh; line-height: 1
   z-index: 1;
 }
 .feed-composer.is-fullscreen-panel .editor-shell textarea {
-  min-height: min(48vh, calc(75vh - 224px));
-  max-height: min(48vh, calc(75vh - 224px));
+  height: min(44vh, calc(75vh - 248px));
+  min-height: min(44vh, calc(75vh - 248px));
+  max-height: min(44vh, calc(75vh - 248px));
   padding-top: 18px;
   padding-bottom: 18px;
 }

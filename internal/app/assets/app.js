@@ -20,8 +20,6 @@ const appState = {
   editorFullscreenOpen: false,
   composerCollapsed: false,
   relativeTimeTimerStarted: false,
-  composerAnimating: false,
-  composerPendingCollapsed: null,
   composerCollapseController: null,
   composerSearchRestoreCollapsed: null,
   networkIndicatorBound: false,
@@ -601,7 +599,7 @@ async function playSecretCreateAnimation(node, previousPositions) {
     return;
   }
 
-  await animateComposerHandoff(node);
+  await animateSecretEntry(node);
   node.classList.remove("is-staged");
   requestAnimationFrame(() => node.classList.add("is-visible"));
 }
@@ -621,62 +619,45 @@ function animateFeedReflow(previousPositions, newRoomCode) {
       return;
     }
     card.classList.add("feed-shift-animate");
-    card.style.transform = `translateY(${deltaY}px)`;
-    requestAnimationFrame(() => {
-      card.style.transform = "";
-    });
-    window.setTimeout(() => {
+    const animation = card.animate(
+      [
+        { transform: `translateY(${deltaY}px)` },
+        { transform: "translateY(0)" },
+      ],
+      {
+        duration: 340,
+        easing: "cubic-bezier(0.22, 0.8, 0.2, 1)",
+      },
+    );
+    animation.finished.finally(() => {
       card.classList.remove("feed-shift-animate");
-      card.style.transform = "";
-    }, 340);
+    });
   });
 }
 
-function animateComposerHandoff(node) {
-  const composer = document.querySelector("#composer");
-  const summary = composer?.querySelector("summary");
-  if (!composer || !summary) {
+function animateSecretEntry(node) {
+  if (!node) {
     return Promise.resolve();
   }
-
-  const startRect = composer.getBoundingClientRect();
-  const endRect = node.getBoundingClientRect();
-  const ghost = document.createElement("div");
-  ghost.className = "create-handoff";
-  ghost.style.left = `${startRect.left}px`;
-  ghost.style.top = `${startRect.top}px`;
-  ghost.style.width = `${startRect.width}px`;
-  ghost.style.height = `${Math.max(summary.getBoundingClientRect().height + 110, 148)}px`;
-  document.body.appendChild(ghost);
-
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      ghost.animate([
-        {
-          transform: "translate3d(0, 0, 0) scale(1)",
-          opacity: 0.88,
-          filter: "blur(0px)",
-        },
-        {
-          transform: `translate3d(${(endRect.left - startRect.left) * 0.08}px, ${(endRect.top - startRect.top) * 0.52}px, 0) scale(0.97)`,
-          opacity: 0.52,
-          filter: "blur(1px)",
-        },
-        {
-          transform: `translate3d(${endRect.left - startRect.left}px, ${endRect.top - startRect.top + 24}px, 0) scale(0.92)`,
-          opacity: 0,
-          filter: "blur(3px)",
-        },
-      ], {
-        duration: 420,
-        easing: "cubic-bezier(0.2, 0.78, 0.18, 1)",
-        fill: "forwards",
-      }).finished.finally(() => {
-        ghost.remove();
-        resolve();
-      });
-    });
-  });
+  return node.animate(
+    [
+      {
+        opacity: 0,
+        transform: "translate3d(0, -12px, 0) scale(0.985)",
+        filter: "blur(2px)",
+      },
+      {
+        opacity: 1,
+        transform: "translate3d(0, 0, 0) scale(1)",
+        filter: "blur(0)",
+      },
+    ],
+    {
+      duration: 360,
+      easing: "cubic-bezier(0.22, 0.8, 0.2, 1)",
+      fill: "both",
+    },
+  ).finished.catch(() => void 0);
 }
 
 function bootstrapSession(node, options = {}) {
@@ -1520,6 +1501,27 @@ function renderReceivedSecret(session, message) {
       scrollSecretContentIntoView(node.querySelector("[data-secret-plaintext]"));
       node.querySelector("[data-secret-meta]").textContent = message.burnAfterRead ? "Read once. Deleted after opening." : "Opened.";
       actions.innerHTML = "";
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "icon-button";
+      copy.title = "Copy secret";
+      copy.setAttribute("aria-label", "Copy secret");
+      copy.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="9" y="9" width="10" height="10" rx="2" />
+          <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+        </svg>
+        <span class="sr-only">Copy secret</span>
+      `;
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(plaintext);
+          showToast("Secret copied.");
+        } catch (_error) {
+          showToast("Copy failed.");
+        }
+      });
+      actions.appendChild(copy);
       updateStatus(session, "open", "connected");
       session.channel?.send(JSON.stringify({ kind: "control", action: "decrypt-success", id: message.id }));
       if (message.burnAfterRead) {
@@ -1665,7 +1667,6 @@ function markBurned(session) {
   node.classList.add("is-burned");
   if (session.role === "guest" && node.querySelector("[data-secret-plaintext]").hidden === false) {
     node.querySelector("[data-secret-meta]").textContent = "Deleted on read.";
-    node.querySelector("[data-secret-actions]").innerHTML = "";
     updateStatus(session, "burned", "waiting");
     return;
   }
@@ -1846,7 +1847,6 @@ function syncBulkActions() {
     disable.disabled = true;
     email.disabled = true;
     remove.disabled = true;
-    refreshComposerHeight();
     return;
   }
   toolbar.hidden = false;
@@ -1857,7 +1857,6 @@ function syncBulkActions() {
   disable.disabled = selected.every((session) => session.pendingSecret?.active === false);
   email.disabled = selected.length === 0;
   remove.disabled = selected.length === 0;
-  refreshComposerHeight();
 }
 
 function shareLinkFor(roomCode) {
@@ -1916,7 +1915,6 @@ function toggleEditorFullscreen(composer) {
   composer.open = true;
   composer.classList.add("is-fullscreen-panel");
   syncFullscreenButtonState(true);
-  refreshComposerHeight();
   openOverlay();
 }
 
@@ -1931,7 +1929,6 @@ function closeEditorFullscreen(composer) {
   document.body.classList.remove("editor-fullscreen-open");
   composer.classList.remove("is-fullscreen-panel");
   syncFullscreenButtonState(false);
-  refreshComposerHeight();
   closeOverlayIfIdle();
 }
 
@@ -2398,74 +2395,23 @@ function setupFeedScrollMotion() {
 
 function setupComposerCollapse() {
   const composer = document.querySelector("#composer");
-  const composerBody = composer?.querySelector(".composer-body");
   const composerSummary = composer?.querySelector("summary");
   if (!composer) {
     return;
   }
 
   appState.composerCollapsed = composer.classList.contains("is-collapsed");
-  if (composerBody && appState.composerCollapsed) {
-    composerBody.classList.add("is-hidden");
-    composerBody.style.display = "none";
-    composerBody.style.height = "0px";
-  }
 
   const setComposerCollapsed = (collapsed) => {
-    if (!composerBody) {
-      return;
-    }
-    if (appState.composerAnimating) {
-      appState.composerPendingCollapsed = collapsed;
-      return;
-    }
     if (appState.composerCollapsed === collapsed) {
       return;
     }
-
-    appState.composerAnimating = true;
-    appState.composerPendingCollapsed = null;
-
-    if (!collapsed) {
-      composerBody.classList.remove("is-hidden");
-      composerBody.style.display = "grid";
-    }
-    composerBody.style.height = "auto";
-    const measuredExpandedHeight = composerBody.scrollHeight;
-    const startHeight = composerBody.getBoundingClientRect().height || measuredExpandedHeight;
-    composerBody.style.height = `${startHeight}px`;
-    void composerBody.offsetHeight;
-
-    requestAnimationFrame(() => {
-      composer.classList.toggle("is-collapsed", collapsed);
-      const targetHeight = collapsed ? 0 : measuredExpandedHeight;
-      composerBody.style.height = `${targetHeight}px`;
-      appState.composerCollapsed = collapsed;
-    });
+    composer.classList.toggle("is-collapsed", collapsed);
+    composer.open = true;
+    appState.composerCollapsed = collapsed;
   };
 
   appState.composerCollapseController = setComposerCollapsed;
-
-  composerBody?.addEventListener("transitionend", (event) => {
-    if (event.propertyName !== "height") {
-      return;
-    }
-    appState.composerAnimating = false;
-    if (!appState.composerCollapsed) {
-      composerBody.classList.remove("is-hidden");
-      composerBody.style.display = "grid";
-      composerBody.style.height = "auto";
-    } else {
-      composerBody.classList.add("is-hidden");
-      composerBody.style.display = "none";
-      composerBody.style.height = "0px";
-    }
-    if (appState.composerPendingCollapsed !== null && appState.composerPendingCollapsed !== appState.composerCollapsed) {
-      const pending = appState.composerPendingCollapsed;
-      appState.composerPendingCollapsed = null;
-      setComposerCollapsed(pending);
-    }
-  });
 
   composerSummary?.addEventListener("click", (event) => {
     if (appState.composerCollapsed) {
@@ -2474,33 +2420,6 @@ function setupComposerCollapse() {
       setComposerCollapsed(false);
     }
   });
-
-  window.addEventListener("resize", () => {
-    refreshComposerHeight();
-  });
-  if (document.readyState === "complete") {
-    requestAnimationFrame(() => {
-      refreshComposerHeight();
-    });
-  } else {
-    window.addEventListener("load", () => {
-      requestAnimationFrame(() => {
-        refreshComposerHeight();
-      });
-    }, { once: true });
-  }
-}
-
-function refreshComposerHeight() {
-  const composer = document.querySelector("#composer");
-  const composerBody = composer?.querySelector(".composer-body");
-  if (!composerBody || appState.composerCollapsed) {
-    return;
-  }
-  composerBody.classList.remove("is-hidden");
-  composerBody.style.display = "grid";
-  composerBody.style.height = "auto";
-  composerBody.style.height = `${composerBody.scrollHeight}px`;
 }
 
 function parseTTLSelection(value) {
