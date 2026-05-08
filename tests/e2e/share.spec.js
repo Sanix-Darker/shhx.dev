@@ -1,4 +1,4 @@
-const { test, expect } = require("@playwright/test");
+const { test, expect, devices } = require("@playwright/test");
 
 test.describe("live share flow", () => {
   test("shares and decrypts a secret without a passphrase", async ({ browser }) => {
@@ -80,6 +80,43 @@ test.describe("live share flow", () => {
     await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
     await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
     await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("gamma secret after preview exit");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("keeps fullscreen usable on mobile", async ({ browser }) => {
+    const owner = await browser.newContext({
+      ...devices["iPhone 13"],
+    });
+    const recipient = await browser.newContext({
+      ...devices["iPhone 13"],
+    });
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    if (!(await ownerPage.locator("#create-secret-input").isVisible())) {
+      await ownerPage.locator("#composer > summary").click();
+    }
+    await ownerPage.getByRole("button", { name: "Open fullscreen editor" }).click();
+    await expect(ownerPage.locator("#composer.is-fullscreen-panel")).toBeVisible();
+    await expect(ownerPage.locator("#create-secret-input")).toBeVisible();
+    await ownerPage.getByPlaceholder("Write one secret. Keep it short and intentional.").fill("mobile fullscreen secret");
+    await ownerPage.getByRole("button", { name: "Create secret" }).click();
+    await ownerPage.getByRole("button", { name: "Exit fullscreen editor" }).click();
+
+    const card = ownerPage.locator('#feed details.secret-card[data-role="owner"]').first();
+    await expect(card).toBeVisible();
+    const roomCode = await card.getAttribute("data-room-code");
+    expect(roomCode).toBeTruthy();
+
+    await card.locator("[data-focus-card]").click();
+    await expect(card).toHaveClass(/is-foreground/);
+
+    await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
 
     await recipient.close();
     await owner.close();

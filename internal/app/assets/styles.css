@@ -160,6 +160,7 @@ body.editor-fullscreen-open .feed-composer {
   height: 75vh;
   z-index: 280;
   box-shadow: 0 36px 84px rgba(0, 0, 0, 0.34);
+  overflow: hidden;
 }
 .feed-composer.is-collapsed {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.2);
@@ -1009,6 +1010,48 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
     width: auto;
     order: -1;
   }
+  .feed-composer.is-fullscreen-panel {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    height: 82dvh;
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    z-index: 280;
+  }
+  .feed-composer.is-fullscreen-panel .composer-body {
+    min-height: 0;
+    height: calc(100% - 56px);
+  }
+  .feed-composer.is-fullscreen-panel .composer-body-inner {
+    min-height: 0;
+    height: 100%;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .feed-composer.is-fullscreen-panel .editor-shell {
+    min-height: 0;
+    max-height: none;
+  }
+  .feed-composer.is-fullscreen-panel .editor-shell textarea,
+  .feed-composer.is-fullscreen-panel .line-gutter {
+    height: min(34dvh, 320px);
+    min-height: min(34dvh, 320px);
+    max-height: min(34dvh, 320px);
+  }
+  .secret-card.is-foreground {
+    top: max(12px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - max(24px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    transform: none;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
   .compose-meta {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
@@ -1034,10 +1077,12 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   .room-head, .send-actions { flex-direction: column; align-items: start; }
   .status-stack { justify-items: start; }
   .feed-composer.is-fullscreen-panel {
-    top: 10px;
+    top: max(8px, env(safe-area-inset-top));
     left: 8px;
     right: 8px;
-    height: calc(100vh - 20px);
+    height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    border-radius: 22px;
   }
   .send-meta {
     flex-direction: column;
@@ -1056,7 +1101,25 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
     grid-template-columns: minmax(0, 1fr) 38px;
   }
   .feed-composer.is-fullscreen-panel .composer-body {
-    height: calc(100vh - 76px);
+    height: calc(100% - 56px);
+    min-height: 0;
+  }
+  .feed-composer.is-fullscreen-panel .composer-body-inner {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+  .feed-composer.is-fullscreen-panel .editor-shell textarea,
+  .feed-composer.is-fullscreen-panel .line-gutter {
+    height: min(32dvh, 280px);
+    min-height: min(32dvh, 280px);
+    max-height: min(32dvh, 280px);
+  }
+  .secret-card.is-foreground {
+    top: max(8px, env(safe-area-inset-top));
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    border-radius: 22px;
   }
   .composer-toolbar,
   .bulk-actions-row,
