@@ -98,18 +98,18 @@ function initTheme() {
   }
 
   const applyTheme = (theme) => {
-    const isLight = theme === "light";
-    document.body.classList.toggle("light-theme", isLight);
-    button.title = isLight ? "Switch to dark theme" : "Switch to light theme";
+    const isDark = theme === "dark";
+    document.body.classList.toggle("dark-theme", isDark);
+    button.title = isDark ? "Switch to light theme" : "Switch to dark theme";
     button.setAttribute("aria-label", button.title);
   };
 
   migrateLocalStorageKey(LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY);
   const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  applyTheme(stored === "light" ? "light" : "dark");
+  applyTheme(stored === "dark" ? "dark" : "light");
 
   button.addEventListener("click", () => {
-    const nextTheme = document.body.classList.contains("light-theme") ? "dark" : "light";
+    const nextTheme = document.body.classList.contains("dark-theme") ? "light" : "dark";
     localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
     applyTheme(nextTheme);
   });

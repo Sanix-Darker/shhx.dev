@@ -18,16 +18,16 @@
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <style nonce="{{ .StyleNonce }}">
     html,body{margin:0;min-height:100%}
-    body{background:#050505;color:#f2f2f2}
+    body{background:#f4f4f4;color:#181818}
     h1{margin:0;font-size:clamp(1.08rem,2.64vw,1.85rem);line-height:1.04}
     body:not(.app-ready) .page-shell{opacity:0;visibility:hidden}
-    .boot-splash{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:#050505;z-index:9999;transition:opacity .24s ease,visibility .24s ease}
+    .boot-splash{position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:#f4f4f4;z-index:9999;transition:opacity .24s ease,visibility .24s ease}
     body.app-ready .boot-splash{opacity:0;visibility:hidden;pointer-events:none}
     .boot-shell{width:min(1120px,calc(100vw - 28px));display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:22px;align-items:start}
-    .boot-card,.boot-aside{border:1px solid rgba(255,255,255,.08);border-radius:32px;background:rgba(11,11,11,.96);box-shadow:0 24px 64px rgba(0,0,0,.5)}
+    .boot-card,.boot-aside{border:1px solid rgba(0,0,0,.12);border-radius:32px;background:rgba(255,255,255,.94);box-shadow:0 24px 64px rgba(0,0,0,.08)}
     .boot-card{min-height:360px;padding:22px}
     .boot-aside{min-height:260px;padding:24px}
-    .boot-line,.boot-pill,.boot-block{border-radius:999px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.1),rgba(255,255,255,.04));background-size:200% 100%;animation:bootPulse 1.2s linear infinite}
+    .boot-line,.boot-pill,.boot-block{border-radius:999px;background:linear-gradient(90deg,rgba(0,0,0,.04),rgba(0,0,0,.09),rgba(0,0,0,.04));background-size:200% 100%;animation:bootPulse 1.2s linear infinite}
     .boot-line{height:14px;margin-bottom:12px}
     .boot-line.w1{width:28%}.boot-line.w2{width:64%}.boot-line.w3{width:82%}.boot-line.w4{width:54%}
     .boot-block{height:160px;border-radius:22px;margin-top:18px}
@@ -285,7 +285,7 @@
         <footer class="site-footer">
           <p class="footer-meta-row">
             <button type="button" class="browser-id-badge" id="identity-state" aria-label="Copy browser id" title="Copy browser id">...</button>
-            <button type="button" class="icon-button" id="theme-toggle-button" aria-label="Switch to light theme" title="Switch to light theme">
+            <button type="button" class="icon-button" id="theme-toggle-button" aria-label="Switch to dark theme" title="Switch to dark theme">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
               </svg>
