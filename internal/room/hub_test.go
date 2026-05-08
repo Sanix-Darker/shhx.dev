@@ -110,6 +110,10 @@ func TestHubReplacesOrphanGuest(t *testing.T) {
 		t.Fatalf("expected peer-joined for preview, got %s", joined.Type)
 	}
 
+	hub.mu.Lock()
+	hub.rooms[roomCode].peers["guest-preview"].lastSeen = time.Now().Add(-staleGuestGrace - time.Second)
+	hub.mu.Unlock()
+
 	if err := hub.JoinRoom(roomCode, "guest-real", "Recipient"); err != nil {
 		t.Fatalf("replace orphan guest: %v", err)
 	}

@@ -8,6 +8,8 @@ const MAX_PASSPHRASE_LENGTH = 128;
 const MAX_HINT_LENGTH = 72;
 const TOTP_CODE_LENGTH = 6;
 const MAX_SHARED_JOIN_RETRIES = 4;
+const SECRET_RETRY_INTERVAL_MS = 2200;
+const SECRET_RETRY_MAX_ATTEMPTS = 5;
 
 const appState = {
   identity: null,
@@ -713,6 +715,12 @@ function bootstrapSession(node, options = {}) {
     validationToastShown: false,
     connectedToastShown: false,
     leaveNotified: false,
+    deliveryAcked: false,
+    lastSecretSentAt: 0,
+    secretRetryAttempts: 0,
+    secretRetryTimer: null,
+    secretWatchdogAttempts: 0,
+    secretWatchdogTimer: null,
   };
 
   appState.sessions.set(roomCode, session);
@@ -841,6 +849,9 @@ function attachProvisionedOwnerCard(session, html) {
   session.validationToastShown = false;
   session.connectedToastShown = false;
   session.offerReady = false;
+  session.deliveryAcked = false;
+  session.lastSecretSentAt = 0;
+  session.secretRetryAttempts = 0;
   appState.sessions.delete(previousKey);
   appState.sessions.set(session.roomCode, session);
   syncCardSearchIndex(session);
@@ -965,6 +976,10 @@ function hydrateOwnerCard(session) {
   if (totpCopyButton) {
     totpCopyButton.hidden = !(pendingSecret.authMode === "totp" && pendingSecret.localTOTPSecret);
   }
+  session.deliveryAcked = false;
+  session.lastSecretSentAt = 0;
+  session.secretRetryAttempts = 0;
+  clearSecretRetry(session);
   syncCreatedAt(session);
   syncTTLMark(session);
   syncCardSearchIndex(session);
@@ -984,6 +999,57 @@ function syncOwnerControls(session) {
   toggle.title = isActive ? "Turn off secret" : "Turn on secret";
   toggle.setAttribute("aria-label", toggle.title);
   toggle.setAttribute("aria-pressed", String(!isActive));
+}
+
+function clearSecretRetry(session) {
+  if (session?.secretRetryTimer) {
+    window.clearTimeout(session.secretRetryTimer);
+    session.secretRetryTimer = null;
+  }
+}
+
+function scheduleSecretRetry(session) {
+  if (session.role !== "owner" || session.deliveryAcked || !session.pendingSecret?.active) {
+    return;
+  }
+  clearSecretRetry(session);
+  if (session.secretRetryAttempts >= SECRET_RETRY_MAX_ATTEMPTS) {
+    return;
+  }
+  session.secretRetryTimer = window.setTimeout(() => {
+    session.secretRetryTimer = null;
+    void flushPendingSecret(session, { force: true });
+  }, SECRET_RETRY_INTERVAL_MS);
+}
+
+function clearSecretWatchdog(session) {
+  if (session?.secretWatchdogTimer) {
+    window.clearTimeout(session.secretWatchdogTimer);
+    session.secretWatchdogTimer = null;
+  }
+}
+
+function scheduleSecretWatchdog(session) {
+  if (session.role !== "guest" || session.receivedSecret || !session.channel || session.channel.readyState !== "open") {
+    return;
+  }
+  clearSecretWatchdog(session);
+  if (session.secretWatchdogAttempts >= SECRET_RETRY_MAX_ATTEMPTS) {
+    return;
+  }
+  session.secretWatchdogTimer = window.setTimeout(() => {
+    session.secretWatchdogTimer = null;
+    if (session.receivedSecret || !session.channel || session.channel.readyState !== "open") {
+      return;
+    }
+    session.secretWatchdogAttempts += 1;
+    try {
+      session.channel.send(JSON.stringify({ kind: "control", action: "request-secret" }));
+    } catch (_error) {
+      return;
+    }
+    scheduleSecretWatchdog(session);
+  }, SECRET_RETRY_INTERVAL_MS);
 }
 
 async function startSession(session) {
@@ -1137,6 +1203,7 @@ function bindDataChannel(session, channel) {
   session.channel = channel;
   channel.onopen = () => {
     session.isConnected = true;
+    session.secretWatchdogAttempts = 0;
     updateStatus(session, "connected", "connected");
     updateSessionNote(session, session.role === "owner"
       ? "Peer channel ready. Waiting for browser validation."
@@ -1144,6 +1211,7 @@ function bindDataChannel(session, channel) {
     if (session.role === "guest") {
       void sendIdentityHello(session);
       notifySecretConnected(session);
+      scheduleSecretWatchdog(session);
     }
     if (session.role === "owner" && session.pendingSecret && !session.pendingSecret.active) {
       sendUnavailable(session);
@@ -1153,6 +1221,8 @@ function bindDataChannel(session, channel) {
   };
   channel.onclose = () => {
     session.isConnected = false;
+    clearSecretRetry(session);
+    clearSecretWatchdog(session);
     updateStatus(session, "waiting", "waiting");
     updateSessionNote(session, "Live link closed.");
   };
@@ -1264,11 +1334,16 @@ async function postSignal(session, payload) {
   }
 }
 
-async function flushPendingSecret(session) {
+async function flushPendingSecret(session, options = {}) {
+  const force = options.force === true;
   if (session.role !== "owner" || !session.pendingSecret || !session.isConnected || !session.baseKeyBytes || !session.channel || !session.peerValidated) {
     return;
   }
-  if (!session.pendingSecret.active || session.pendingSecret.sent) {
+  if (!session.pendingSecret.active || (session.deliveryAcked && !force)) {
+    clearSecretRetry(session);
+    return;
+  }
+  if (!force && session.lastSecretSentAt && Date.now() - session.lastSecretSentAt < 700) {
     return;
   }
 
@@ -1285,10 +1360,18 @@ async function flushPendingSecret(session) {
     ciphertext: secret.ciphertext,
     iv: secret.iv,
   };
-  session.channel.send(JSON.stringify(message));
+  try {
+    session.channel.send(JSON.stringify(message));
+  } catch (_error) {
+    scheduleSecretRetry(session);
+    return;
+  }
   session.pendingSecret.sent = true;
+  session.lastSecretSentAt = Date.now();
+  session.secretRetryAttempts += 1;
   updateStatus(session, "shared", "connected");
   updateSessionNote(session, "Secret delivered to the live link.");
+  scheduleSecretRetry(session);
 }
 
 async function handlePeerMessage(session, message) {
@@ -1372,11 +1455,15 @@ async function handleIdentityMessage(session, message) {
   if (message.action === "validated" && session.role === "guest") {
     session.peerValidated = true;
     showToast("Sender accepted this browser.");
+    scheduleSecretWatchdog(session);
   }
 }
 
 function renderReceivedSecret(session, message) {
   const node = session.node;
+  clearSecretWatchdog(session);
+  session.receivedSecret = message;
+  session.secretWatchdogAttempts = 0;
   const otpWrap = node.querySelector("[data-otp-wrap]");
   const otpInput = node.querySelector("[data-otp-input]");
   const factorVisibility = node.querySelector("[data-factor-visibility]");
@@ -1451,6 +1538,11 @@ function renderReceivedSecret(session, message) {
     }
   });
   actions.appendChild(read);
+  try {
+    session.channel?.send(JSON.stringify({ kind: "control", action: "secret-received", id: message.id }));
+  } catch (_error) {
+    void 0;
+  }
   updateStatus(session, message.active ? "sealed" : "off", message.active ? "connected" : "waiting");
 }
 
@@ -1490,6 +1582,18 @@ async function deleteSecret(session) {
 }
 
 function handleControl(session, message) {
+  if (message.action === "request-secret" && session.role === "owner") {
+    if (session.pendingSecret?.active !== false) {
+      void flushPendingSecret(session, { force: true });
+    }
+    return;
+  }
+  if (message.action === "secret-received" && session.role === "owner") {
+    session.deliveryAcked = true;
+    session.secretRetryAttempts = 0;
+    clearSecretRetry(session);
+    return;
+  }
   if (message.action === "unavailable") {
     if (session.role === "guest") {
       redirectHome();
@@ -1586,6 +1690,8 @@ async function leaveSession(session, animateRemove = false) {
       session.provisionTimer = null;
     }
     clearSecretExpiryTimer(session.roomCode);
+    clearSecretRetry(session);
+    clearSecretWatchdog(session);
     session.eventSource?.close();
     session.channel?.close();
     session.rtc?.close();
@@ -1634,6 +1740,8 @@ function notifySessionLeaveSoon(session) {
 }
 
 function resetPeerLink(session) {
+  clearSecretRetry(session);
+  clearSecretWatchdog(session);
   session.channel?.close();
   session.rtc?.close();
   session.channel = null;
@@ -1641,10 +1749,15 @@ function resetPeerLink(session) {
   session.baseKeyBytes = null;
   session.isConnected = false;
   session.peerValidated = false;
+  session.deliveryAcked = false;
+  session.lastSecretSentAt = 0;
+  session.secretRetryAttempts = 0;
+  session.secretWatchdogAttempts = 0;
   session.validationChallenge = null;
   session.remoteBrowserId = null;
   session.remoteIdentityPublicKey = null;
   session.helloSent = false;
+  session.receivedSecret = null;
   session.linkOpenedToastShown = false;
   session.validationToastShown = false;
   session.connectedToastShown = false;

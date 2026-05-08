@@ -46,6 +46,9 @@ type peer struct {
 	displayName string
 	role        string
 	streams     map[*subscription]struct{}
+	joinedAt    time.Time
+	lastSeen    time.Time
+	engaged     bool
 }
 
 type roomState struct {
@@ -60,6 +63,8 @@ type Hub struct {
 	rooms   map[string]*roomState
 	roomTTL time.Duration
 }
+
+const staleGuestGrace = 3 * time.Second
 
 func NewHub() *Hub {
 	hub := &Hub{
@@ -87,6 +92,8 @@ func (h *Hub) CreateRoom(ownerID, displayName string) string {
 		displayName: displayName,
 		role:        RoleOwner,
 		streams:     make(map[*subscription]struct{}),
+		joinedAt:    now,
+		lastSeen:    now,
 	}
 	h.rooms[code] = state
 	return code
@@ -101,15 +108,19 @@ func (h *Hub) JoinRoom(code, peerID, displayName string) error {
 		return ErrRoomNotFound
 	}
 	h.evictOrphanGuestsLocked(state)
+	h.evictStaleGuestsLocked(state, time.Now())
 	if len(state.peers) >= 2 {
 		return ErrRoomFull
 	}
-	state.lastActive = time.Now()
+	now := time.Now()
+	state.lastActive = now
 	state.peers[peerID] = &peer{
 		id:          peerID,
 		displayName: displayName,
 		role:        RoleGuest,
 		streams:     make(map[*subscription]struct{}),
+		joinedAt:    now,
+		lastSeen:    now,
 	}
 	h.broadcastLocked(state, Event{
 		Type: "peer-joined",
@@ -131,6 +142,7 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 		return nil, nil, ErrPeerNotFound
 	}
 	state.lastActive = time.Now()
+	p.lastSeen = state.lastActive
 
 	sub := &subscription{ch: make(chan Event, 32)}
 	p.streams[sub] = struct{}{}
@@ -178,10 +190,13 @@ func (h *Hub) Send(code, from, to, signalType string, payload json.RawMessage) e
 	if !ok {
 		return ErrRoomNotFound
 	}
-	if _, ok := state.peers[from]; !ok {
+	sender, ok := state.peers[from]
+	if !ok {
 		return ErrPeerNotFound
 	}
 	state.lastActive = time.Now()
+	sender.lastSeen = state.lastActive
+	sender.engaged = true
 
 	evt := Event{
 		Type: "signal",
@@ -252,6 +267,22 @@ func (h *Hub) evictOrphanGuestsLocked(state *roomState) {
 			continue
 		}
 		if len(peer.streams) > 0 {
+			continue
+		}
+		delete(state.peers, id)
+		h.broadcastLocked(state, Event{
+			Type: "peer-left",
+			Data: map[string]string{"id": id},
+		})
+	}
+}
+
+func (h *Hub) evictStaleGuestsLocked(state *roomState, now time.Time) {
+	for id, peer := range state.peers {
+		if peer.role != RoleGuest || peer.engaged {
+			continue
+		}
+		if now.Sub(peer.lastSeen) < staleGuestGrace {
 			continue
 		}
 		delete(state.peers, id)
