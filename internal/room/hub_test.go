@@ -180,6 +180,26 @@ func TestHubLeaveDeletesEmptyRoom(t *testing.T) {
 	}
 }
 
+func TestHubRejectsJoinWhenOwnerWentStale(t *testing.T) {
+	hub := NewHub()
+	roomCode := hub.CreateRoom("owner-1", "Owner")
+
+	ownerEvents, ownerCleanup, err := hub.Subscribe(roomCode, "owner-1")
+	if err != nil {
+		t.Fatalf("subscribe owner: %v", err)
+	}
+	expectEvent(t, ownerEvents)
+	ownerCleanup()
+
+	hub.mu.Lock()
+	hub.rooms[roomCode].peers["owner-1"].lastSeen = time.Now().Add(-staleOwnerGrace - time.Second)
+	hub.mu.Unlock()
+
+	if err := hub.JoinRoom(roomCode, "guest-1", "Guest"); err != ErrRoomNotFound {
+		t.Fatalf("expected ErrRoomNotFound for stale owner room, got %v", err)
+	}
+}
+
 func TestHubPruneExpiredRooms(t *testing.T) {
 	hub := NewHub()
 	hub.roomTTL = time.Minute

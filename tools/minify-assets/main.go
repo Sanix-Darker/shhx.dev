@@ -16,28 +16,33 @@ func main() {
 		fail(err)
 	}
 
-	sourceDir := filepath.Join(root, "internal", "app", "assets")
 	outputDir := filepath.Join(root, "internal", "app", "static")
 
-	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o750); err != nil {
 		fail(err)
 	}
 
-	if err := writeMinified(filepath.Join(sourceDir, "app.js"), filepath.Join(outputDir, "app.js"), minifyJS); err != nil {
+	if err := writeMinified(root, filepath.Join("internal", "app", "assets", "app.js"), filepath.Join("internal", "app", "static", "app.js"), minifyJS); err != nil {
 		fail(err)
 	}
-	if err := writeMinified(filepath.Join(sourceDir, "styles.css"), filepath.Join(outputDir, "styles.css"), minifyCSS); err != nil {
+	if err := writeMinified(root, filepath.Join("internal", "app", "assets", "styles.css"), filepath.Join("internal", "app", "static", "styles.css"), minifyCSS); err != nil {
 		fail(err)
 	}
 }
 
-func writeMinified(srcPath, dstPath string, minifier func([]byte) []byte) error {
-	src, err := os.ReadFile(srcPath)
+func writeMinified(rootPath, srcPath, dstPath string, minifier func([]byte) []byte) error {
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return fmt.Errorf("open root %s: %w", rootPath, err)
+	}
+	defer root.Close()
+
+	src, err := root.ReadFile(srcPath)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", srcPath, err)
 	}
 	minified := minifier(src)
-	return os.WriteFile(dstPath, minified, 0o644)
+	return root.WriteFile(dstPath, minified, 0o640)
 }
 
 func minifyJS(src []byte) []byte {

@@ -1,8 +1,11 @@
 package app
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha1"
 	"embed"
+	"encoding/base64"
 	"encoding/base32"
 	"encoding/json"
 	"errors"
@@ -11,7 +14,11 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"shhx.dev/internal/room"
 )
@@ -30,6 +37,7 @@ type pageData struct {
 	Title        string
 	ShareCode    string
 	StyleNonce   string
+	ICEServers   string
 	PreviewTitle string
 	PreviewDesc  string
 	PreviewImage string
@@ -42,6 +50,13 @@ type roomCardData struct {
 	PeerID      string
 	DisplayName string
 }
+
+type ownerRoomEvent struct {
+	RoomCode string     `json:"roomCode"`
+	Event    room.Event `json:"event"`
+}
+
+const defaultICEServersJSON = `[{"urls":["stun:stun.l.google.com:19302"]}]`
 
 func NewServer() (*Server, error) {
 	tmpl, err := template.ParseFS(assets, "templates/*.html")
@@ -70,6 +85,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/preview.svg", s.handlePreviewSVG)
 	mux.HandleFunc("/ui/rooms/create", s.handleCreateRoomCard)
 	mux.HandleFunc("/ui/rooms/join", s.handleJoinRoomCard)
+	mux.HandleFunc("/api/owner/events", s.handleOwnerEvents)
 	mux.HandleFunc("/api/rooms/", s.handleRoomAPI)
 	return withSecurityHeaders(withRateLimit(s.limiter, mux))
 }
@@ -97,6 +113,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Title:        "shhx",
 		ShareCode:    shareCode,
 		StyleNonce:   cspStyleNonce(r),
+		ICEServers:   iceServersJSON(),
 		PreviewTitle: title,
 		PreviewDesc:  desc,
 		PreviewImage: baseURL + "/preview.svg",
@@ -104,6 +121,80 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func iceServersJSON() string {
+	if value := turnICEServersJSON(); value != "" {
+		return value
+	}
+	value := strings.TrimSpace(os.Getenv("SHHX_ICE_SERVERS"))
+	if value == "" {
+		return defaultICEServersJSON
+	}
+	var parsed []map[string]any
+	if err := json.Unmarshal([]byte(value), &parsed); err != nil || len(parsed) == 0 {
+		return defaultICEServersJSON
+	}
+	return value
+}
+
+func turnICEServersJSON() string {
+	secret := strings.TrimSpace(os.Getenv("SHHX_TURN_SECRET"))
+	urisRaw := strings.TrimSpace(os.Getenv("SHHX_TURN_URIS"))
+	if secret == "" || urisRaw == "" {
+		return ""
+	}
+
+	var stunURLs []string
+	var turnURLs []string
+	for _, part := range strings.Split(urisRaw, ",") {
+		uri := strings.TrimSpace(part)
+		if uri == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(uri, "stun:") || strings.HasPrefix(uri, "stuns:"):
+			stunURLs = append(stunURLs, uri)
+		case strings.HasPrefix(uri, "turn:") || strings.HasPrefix(uri, "turns:"):
+			turnURLs = append(turnURLs, uri)
+		}
+	}
+
+	if len(stunURLs) == 0 && len(turnURLs) == 0 {
+		return ""
+	}
+
+	ttl := 3600
+	if raw := strings.TrimSpace(os.Getenv("SHHX_TURN_TTL_SECONDS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 300 && parsed <= 86400 {
+			ttl = parsed
+		}
+	}
+
+	username := fmt.Sprintf("%d:shhx", time.Now().Add(time.Duration(ttl)*time.Second).Unix())
+	mac := hmac.New(sha1.New, []byte(secret))
+	mac.Write([]byte(username))
+	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	var config []map[string]any
+	if len(stunURLs) > 0 {
+		config = append(config, map[string]any{"urls": stunURLs})
+	}
+	if len(turnURLs) > 0 {
+		config = append(config, map[string]any{
+			"urls":       turnURLs,
+			"username":   username,
+			"credential": credential,
+		})
+	}
+	if len(config) == 0 {
+		return ""
+	}
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return ""
+	}
+	return string(payload)
 }
 
 func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +349,158 @@ func (s *Server) handleRoomAPI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type ownerSubscription struct {
+	roomCode string
+	peerID   string
+}
+
+func parseOwnerSubscriptions(r *http.Request) ([]ownerSubscription, error) {
+	raw := r.URL.Query()["sub"]
+	if len(raw) == 0 {
+		return nil, errInvalidRoomCode
+	}
+
+	seen := make(map[string]struct{}, len(raw))
+	subs := make([]ownerSubscription, 0, len(raw))
+	for _, entry := range raw {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		roomCode, peerID, ok := strings.Cut(entry, ".")
+		if !ok {
+			return nil, errInvalidRoomCode
+		}
+		roomCode = strings.ToUpper(strings.TrimSpace(roomCode))
+		peerID = strings.TrimSpace(peerID)
+		if !validRoomCode(roomCode) || !validPeerID(peerID) {
+			return nil, errInvalidRoomCode
+		}
+		key := roomCode + "." + peerID
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		subs = append(subs, ownerSubscription{roomCode: roomCode, peerID: peerID})
+	}
+	if len(subs) == 0 {
+		return nil, errInvalidRoomCode
+	}
+	slices.SortFunc(subs, func(a, b ownerSubscription) int {
+		if a.roomCode == b.roomCode {
+			return strings.Compare(a.peerID, b.peerID)
+		}
+		return strings.Compare(a.roomCode, b.roomCode)
+	})
+	return subs, nil
+}
+
+func (s *Server) handleOwnerEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	subs, err := parseOwnerSubscriptions(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(subs) > 100 {
+		http.Error(w, "too many subscriptions", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	type activeSub struct {
+		roomCode string
+		ch       <-chan room.Event
+		cleanup  func()
+	}
+
+	active := make([]activeSub, 0, len(subs))
+	for _, sub := range subs {
+		ch, cleanup, subErr := s.hub.Subscribe(sub.roomCode, sub.peerID)
+		if subErr != nil {
+			continue
+		}
+		active = append(active, activeSub{
+			roomCode: sub.roomCode,
+			ch:       ch,
+			cleanup:  cleanup,
+		})
+	}
+	if len(active) == 0 {
+		http.Error(w, room.ErrRoomNotFound.Error(), http.StatusNotFound)
+		return
+	}
+	defer func() {
+		for _, sub := range active {
+			sub.cleanup()
+		}
+	}()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "stream unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := io.WriteString(w, "retry: 2000\n\n"); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	merged := make(chan ownerRoomEvent, 256)
+	ctx := r.Context()
+	for _, sub := range active {
+		go func(roomCode string, ch <-chan room.Event) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case evt, ok := <-ch:
+					if !ok {
+						return
+					}
+					select {
+					case merged <- ownerRoomEvent{RoomCode: roomCode, Event: evt}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}(sub.roomCode, sub.ch)
+	}
+
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-heartbeat.C:
+			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case evt := <-merged:
+			payload, err := json.Marshal(evt)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -278,8 +521,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode s
 	defer cleanup()
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -293,10 +537,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode s
 	flusher.Flush()
 
 	ctx := r.Context()
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-heartbeat.C:
+			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
 		case evt, ok := <-ch:
 			if !ok {
 				return

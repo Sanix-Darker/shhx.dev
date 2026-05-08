@@ -2,7 +2,10 @@ package app
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"shhx.dev/internal/room"
 )
 
 func TestCreateRoomRejectsOversizedForm(t *testing.T) {
@@ -112,6 +117,48 @@ func TestSecurityHeadersPresent(t *testing.T) {
 	}
 	if rr.Header().Get("X-Frame-Options") != "DENY" {
 		t.Fatalf("expected X-Frame-Options DENY, got %q", rr.Header().Get("X-Frame-Options"))
+	}
+}
+
+func TestIndexEmbedsEphemeralTurnConfig(t *testing.T) {
+	t.Setenv("SHHX_TURN_SECRET", "turn-secret-for-test")
+	t.Setenv("SHHX_TURN_URIS", "stun:turn.example.com:3478,turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp")
+	t.Setenv("SHHX_TURN_TTL_SECONDS", "600")
+
+	server, err := NewServer()
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	matches := regexp.MustCompile(`data-ice-servers='([^']+)'`).FindStringSubmatch(body)
+	if len(matches) != 2 {
+		t.Fatal("expected embedded ice config")
+	}
+	iceConfig := html.UnescapeString(matches[1])
+	if !strings.Contains(iceConfig, "turn:turn.example.com:3478?transport=udp") {
+		t.Fatal("expected turn uri in body")
+	}
+	if !strings.Contains(iceConfig, "stun:turn.example.com:3478") {
+		t.Fatal("expected stun uri in body")
+	}
+	if !strings.Contains(iceConfig, `"username":"`) || !strings.Contains(iceConfig, `"credential":"`) {
+		t.Fatal("expected ephemeral turn credentials in body")
+	}
+
+	encoded := regexp.MustCompile(`"credential":"([^"]+)"`).FindStringSubmatch(iceConfig)
+	if len(encoded) != 2 {
+		t.Fatal("expected credential match")
+	}
+	if _, err := base64.StdEncoding.DecodeString(encoded[1]); err != nil {
+		t.Fatalf("expected valid base64 credential: %v", err)
 	}
 }
 
@@ -243,6 +290,113 @@ func TestActiveGuestStillBlocksSecondRecipientOverHTTP(t *testing.T) {
 	}
 }
 
+func TestJoinRejectsRoomWhenOwnerWentStaleOverHTTP(t *testing.T) {
+	server, err := NewServer()
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	roomCode, ownerPeerID := createRoomViaHTTP(t, ts.URL, "Sender")
+	ownerEvents, ownerClose := openEventsStream(t, ts.URL, roomCode, ownerPeerID)
+	expectHTTPEvent(t, ownerEvents)
+	ownerClose()
+	time.Sleep(50 * time.Millisecond)
+
+	server.hub.ForcePeerLastSeenForTest(roomCode, ownerPeerID, time.Now().Add(-room.StaleOwnerGraceForTest-time.Second))
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/ui/rooms/join", strings.NewReader("display_name=Recipient&room_code="+roomCode))
+	if err != nil {
+		t.Fatalf("new join request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", ts.URL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("join request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for stale owner room, got %d", resp.StatusCode)
+	}
+}
+
+func TestOwnerEventsMultiplexRoomsOverHTTP(t *testing.T) {
+	server, err := NewServer()
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	firstRoom, firstPeer := createRoomViaHTTP(t, ts.URL, "Sender")
+	secondRoom, secondPeer := createRoomViaHTTP(t, ts.URL, "Sender")
+
+	events, closeStream := openOwnerEventsStream(t, ts.URL, []string{
+		firstRoom + "." + firstPeer,
+		secondRoom + "." + secondPeer,
+	})
+	defer closeStream()
+
+	first := expectOwnerHTTPEvent(t, events)
+	second := expectOwnerHTTPEvent(t, events)
+	if first.Event.Type != "room-state" || second.Event.Type != "room-state" {
+		t.Fatalf("expected initial room-state events, got %s and %s", first.Event.Type, second.Event.Type)
+	}
+
+	_, guestPeer := joinRoomViaHTTP(t, ts.URL, firstRoom, "Recipient")
+	joined := expectOwnerHTTPEvent(t, events)
+	if joined.RoomCode != firstRoom {
+		t.Fatalf("expected event for first room, got %s", joined.RoomCode)
+	}
+	if joined.Event.Type != "peer-joined" {
+		t.Fatalf("expected peer-joined event, got %s", joined.Event.Type)
+	}
+
+	postSignalViaHTTP(t, ts.URL, firstRoom, `{"from":"`+firstPeer+`","to":"`+guestPeer+`","type":"ready","payload":{}}`)
+}
+
+func TestOwnerEventsRejectTooManySubscriptions(t *testing.T) {
+	server, err := NewServer()
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	ts := httptest.NewServer(server.Routes())
+	defer ts.Close()
+
+	params := make([]string, 0, 101)
+	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	for i := 0; i < 101; i++ {
+		code := []byte{
+			alphabet[(i/3125)%len(alphabet)],
+			alphabet[(i/625)%len(alphabet)],
+			alphabet[(i/125)%len(alphabet)],
+			alphabet[(i/25)%len(alphabet)],
+			alphabet[(i/5)%len(alphabet)],
+			alphabet[i%len(alphabet)],
+		}
+		params = append(params, "sub="+fmt.Sprintf("%s.ABCDEFGHIJ", string(code)))
+	}
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/owner/events?"+strings.Join(params, "&"), nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("owner events request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d", resp.StatusCode)
+	}
+}
+
 var roomCodeRe = regexp.MustCompile(`data-room-code="([A-Z0-9]+)"`)
 var peerIDRe = regexp.MustCompile(`data-peer-id="([A-Z0-9]+)"`)
 
@@ -344,6 +498,52 @@ func openEventsStream(t *testing.T, baseURL, roomCode, peerID string) (<-chan ev
 	}
 }
 
+func openOwnerEventsStream(t *testing.T, baseURL string, subs []string) (<-chan ownerEventEnvelope, func()) {
+	t.Helper()
+	params := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		params = append(params, "sub="+sub)
+	}
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/api/owner/events?"+strings.Join(params, "&"), nil)
+	if err != nil {
+		t.Fatalf("new owner events request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("open owner events stream: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("expected 200 opening owner events stream, got %d: %s", resp.StatusCode, string(body))
+	}
+
+	events := make(chan ownerEventEnvelope, 8)
+	go func() {
+		defer close(events)
+		reader := bufio.NewReader(resp.Body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			var evt ownerEventEnvelope
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &evt); err != nil {
+				continue
+			}
+			events <- evt
+		}
+	}()
+
+	return events, func() {
+		resp.Body.Close()
+	}
+}
+
 func postSignalViaHTTP(t *testing.T, baseURL, roomCode, payload string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/rooms/"+roomCode+"/signal", strings.NewReader(payload))
@@ -368,6 +568,11 @@ type eventEnvelope struct {
 	Data any    `json:"data"`
 }
 
+type ownerEventEnvelope struct {
+	RoomCode string        `json:"roomCode"`
+	Event    eventEnvelope `json:"event"`
+}
+
 func expectHTTPEvent(t *testing.T, ch <-chan eventEnvelope) eventEnvelope {
 	t.Helper()
 	select {
@@ -379,5 +584,19 @@ func expectHTTPEvent(t *testing.T, ch <-chan eventEnvelope) eventEnvelope {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for http event")
 		return eventEnvelope{}
+	}
+}
+
+func expectOwnerHTTPEvent(t *testing.T, ch <-chan ownerEventEnvelope) ownerEventEnvelope {
+	t.Helper()
+	select {
+	case evt, ok := <-ch:
+		if !ok {
+			t.Fatal("owner event stream closed unexpectedly")
+		}
+		return evt
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for owner http event")
+		return ownerEventEnvelope{}
 	}
 }

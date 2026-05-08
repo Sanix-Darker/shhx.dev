@@ -14,6 +14,7 @@ test.describe("live share flow", () => {
     });
 
     await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
     await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
     await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
     await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("alpha secret from owner");
@@ -39,6 +40,7 @@ test.describe("live share flow", () => {
     });
 
     await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
     await expect(recipientPage.getByPlaceholder("Enter the passphrase")).toBeVisible();
     await recipientPage.getByPlaceholder("Enter the passphrase").fill("wrong passphrase");
     await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
@@ -69,10 +71,12 @@ test.describe("live share flow", () => {
     });
 
     await previewPage.goto(`/${roomCode}`);
-    await expect(ownerPage.locator("#toast-stack")).toContainText("Someone opened the link.");
+    await expect(ownerPage.locator("#toast-stack")).not.toContainText("Someone opened the link.");
     await preview.close();
 
     await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(ownerPage.locator("#toast-stack")).toContainText("Someone opened the link.");
     await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
     await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
     await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("gamma secret after preview exit");

@@ -59,6 +59,7 @@ func newRateLimiter() *rateLimiter {
 			"preview": {burst: 30, refillPerSec: 0.5, cleanupWindow: 15 * time.Minute},
 			"create":  {burst: 12, refillPerSec: 0.2, cleanupWindow: 20 * time.Minute},
 			"join":    {burst: 20, refillPerSec: 0.5, cleanupWindow: 20 * time.Minute},
+			"owner-events": {burst: 12, refillPerSec: 0.25, cleanupWindow: 30 * time.Minute},
 			"events":  {burst: 20, refillPerSec: 0.5, cleanupWindow: 30 * time.Minute},
 			"signal":  {burst: 180, refillPerSec: 3, cleanupWindow: 20 * time.Minute},
 			"leave":   {burst: 40, refillPerSec: 1, cleanupWindow: 20 * time.Minute},
@@ -194,6 +195,8 @@ func classifyRoute(r *http.Request) string {
 		return "create"
 	case r.URL.Path == "/ui/rooms/join" && r.Method == http.MethodPost:
 		return "join"
+	case r.URL.Path == "/api/owner/events" && r.Method == http.MethodGet:
+		return "owner-events"
 	case strings.HasPrefix(r.URL.Path, "/api/rooms/") && strings.HasSuffix(r.URL.Path, "/events") && r.Method == http.MethodGet:
 		return "events"
 	case strings.HasPrefix(r.URL.Path, "/api/rooms/") && strings.HasSuffix(r.URL.Path, "/signal") && r.Method == http.MethodPost:

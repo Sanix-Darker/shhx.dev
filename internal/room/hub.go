@@ -65,6 +65,9 @@ type Hub struct {
 }
 
 const staleGuestGrace = 3 * time.Second
+const staleOwnerGrace = 5 * time.Second
+
+const StaleOwnerGraceForTest = staleOwnerGrace
 
 func NewHub() *Hub {
 	hub := &Hub{
@@ -107,6 +110,10 @@ func (h *Hub) JoinRoom(code, peerID, displayName string) error {
 	if !ok {
 		return ErrRoomNotFound
 	}
+	h.evictStaleOwnersLocked(code, state, time.Now())
+	if _, ok := h.rooms[code]; !ok {
+		return ErrRoomNotFound
+	}
 	h.evictOrphanGuestsLocked(state)
 	h.evictStaleGuestsLocked(state, time.Now())
 	if len(state.peers) >= 2 {
@@ -144,7 +151,7 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 	state.lastActive = time.Now()
 	p.lastSeen = state.lastActive
 
-	sub := &subscription{ch: make(chan Event, 32)}
+	sub := &subscription{ch: make(chan Event, 128)}
 	p.streams[sub] = struct{}{}
 
 	peers := make([]PeerSnapshot, 0, len(state.peers))
@@ -163,6 +170,7 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 		if state, ok := h.rooms[code]; ok {
 			if peer, ok := state.peers[peerID]; ok {
 				delete(peer.streams, sub)
+				peer.lastSeen = time.Now()
 				if peer.role == RoleGuest && len(peer.streams) == 0 {
 					delete(state.peers, peerID)
 					state.lastActive = time.Now()
@@ -277,6 +285,28 @@ func (h *Hub) evictOrphanGuestsLocked(state *roomState) {
 	}
 }
 
+func (h *Hub) evictStaleOwnersLocked(code string, state *roomState, now time.Time) {
+	for id, peer := range state.peers {
+		if peer.role != RoleOwner {
+			continue
+		}
+		if len(peer.streams) > 0 {
+			continue
+		}
+		if now.Sub(peer.lastSeen) < staleOwnerGrace {
+			continue
+		}
+		delete(h.rooms, code)
+		delete(state.peers, id)
+		for _, otherPeer := range state.peers {
+			for sub := range otherPeer.streams {
+				close(sub.ch)
+			}
+		}
+		return
+	}
+}
+
 func (h *Hub) evictStaleGuestsLocked(state *roomState, now time.Time) {
 	for id, peer := range state.peers {
 		if peer.role != RoleGuest || peer.engaged {
@@ -343,6 +373,16 @@ func randomCodeLocked(existing map[string]*roomState) string {
 		code := string(buf)
 		if _, ok := existing[code]; !ok {
 			return code
+		}
+	}
+}
+
+func (h *Hub) ForcePeerLastSeenForTest(code, peerID string, at time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if state, ok := h.rooms[code]; ok {
+		if peer, ok := state.peers[peerID]; ok {
+			peer.lastSeen = at
 		}
 	}
 }

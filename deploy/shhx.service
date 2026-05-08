@@ -9,6 +9,7 @@ User=shhx
 Group=shhx
 WorkingDirectory=/opt/shhx
 Environment=ADDR=:8194
+EnvironmentFile=-/etc/shhx/shhx.env
 ExecStart=/opt/shhx/shhx
 Restart=always
 RestartSec=3

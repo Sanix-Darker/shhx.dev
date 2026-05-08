@@ -1,0 +1,18 @@
+listening-port=3478
+tls-listening-port=5349
+
+fingerprint
+use-auth-secret
+static-auth-secret=replace-with-the-same-secret-as-shhx-turn-secret
+realm=shhx.dev
+
+listening-ip=0.0.0.0
+relay-ip=0.0.0.0
+
+no-multicast-peers
+no-cli
+
+# TLS is optional if you only use turn: URIs. If you want turns:, provide
+# certificate paths that coturn can read.
+# cert=/etc/ssl/certs/your-cert.pem
+# pkey=/etc/ssl/private/your-key.pem

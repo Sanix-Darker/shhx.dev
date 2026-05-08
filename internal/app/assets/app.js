@@ -1,6 +1,6 @@
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
-const stunServers = [{ urls: ["stun:stun.l.google.com:19302"] }];
+const stunServers = parseICEServers();
 const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const scrambleAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ23456789";
 const MAX_SECRET_LENGTH = 4096;
@@ -10,6 +10,12 @@ const TOTP_CODE_LENGTH = 6;
 const MAX_SHARED_JOIN_RETRIES = 4;
 const SECRET_RETRY_INTERVAL_MS = 2200;
 const SECRET_RETRY_MAX_ATTEMPTS = 5;
+const SIGNAL_RETRY_MAX_ATTEMPTS = 6;
+const SIGNAL_RETRY_QUEUE_LIMIT = 64;
+const PEER_RECONNECT_BASE_MS = 1200;
+const PEER_RECONNECT_MAX_MS = 10000;
+const FETCH_TIMEOUT_MS = 10000;
+const MAX_OWNER_SECRETS = 100;
 
 const appState = {
   identity: null,
@@ -24,6 +30,9 @@ const appState = {
   composerSearchRestoreCollapsed: null,
   networkIndicatorBound: false,
   pendingCreateAttempts: new Map(),
+  ownerEventSource: null,
+  ownerEventSourceKey: "",
+  ownerStreamSuspended: false,
 };
 const LOCAL_VAULT_KEY_STORAGE = "shhx.localVaultKey";
 const LEGACY_LOCAL_VAULT_KEY_STORAGE = "schh.localVaultKey";
@@ -53,6 +62,22 @@ document.addEventListener("DOMContentLoaded", async () => {
     markAppReady();
   }
 });
+
+function parseICEServers() {
+  try {
+    const raw = String(document.body?.dataset?.iceServers || "").trim();
+    if (!raw) {
+      return [{ urls: ["stun:stun.l.google.com:19302"] }];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      return [{ urls: ["stun:stun.l.google.com:19302"] }];
+    }
+    return parsed;
+  } catch (_error) {
+    return [{ urls: ["stun:stun.l.google.com:19302"] }];
+  }
+}
 
 function migrateLocalStorageKey(fromKey, toKey) {
   if (!fromKey || !toKey || fromKey === toKey) {
@@ -294,25 +319,25 @@ async function autoJoinSharedLink() {
       window.location.href = "/?compose=1";
     });
   }
-  updateComposerNote("Opening shared secret.");
-  const sessionHTML = await joinSharedLink(shareCode);
-  if (!sessionHTML) {
-    return;
-  }
-  const node = insertCardHTML(sessionHTML);
-  bootstrapSession(node);
+  renderSharedLinkGate(shareCode);
 }
 
 async function joinSharedLink(shareCode) {
   for (let attempt = 0; attempt <= MAX_SHARED_JOIN_RETRIES; attempt += 1) {
-    const response = await fetch("/ui/rooms/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({
-        display_name: "Peer",
-        room_code: shareCode,
-      }),
-    });
+    let response;
+    try {
+      response = await timedFetch("/ui/rooms/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body: new URLSearchParams({
+          display_name: "Peer",
+          room_code: shareCode,
+        }),
+      });
+    } catch (_error) {
+      showMissingSharedSecret(0, shareCode);
+      return "";
+    }
 
     if (response.ok) {
       return response.text();
@@ -327,6 +352,45 @@ async function joinSharedLink(shareCode) {
     await delay(400 * (attempt + 1));
   }
   return "";
+}
+
+function renderSharedLinkGate(shareCode) {
+  const feed = document.querySelector("#feed");
+  const empty = document.querySelector("#empty-feed");
+  if (!feed) {
+    return;
+  }
+  empty?.setAttribute("hidden", "hidden");
+  const gate = document.createElement("section");
+  gate.className = "room-bubble shared-link-gate";
+  gate.id = "shared-link-gate";
+  gate.innerHTML = `
+    <p class="eyebrow">secret</p>
+    <h2>s: ${escapeHTML(shareCode)}</h2>
+    <p class="signal-note">Open the live secret manually. Passive previews stay outside the room.</p>
+    <button type="button" class="create-secret-button" id="open-shared-secret-button" aria-label="Open live secret" title="Open live secret">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 5v14"></path>
+        <path d="M5 12h14"></path>
+      </svg>
+      <span>OPEN LIVE SECRET</span>
+    </button>
+  `;
+  feed.prepend(gate);
+  const openButton = gate.querySelector("#open-shared-secret-button");
+  openButton?.addEventListener("click", async () => {
+    openButton.disabled = true;
+    gate.querySelector(".signal-note").textContent = "Joining the live secret.";
+    const sessionHTML = await joinSharedLink(shareCode);
+    if (!sessionHTML) {
+      gate.querySelector(".signal-note").textContent = `The secret "${shareCode}" is not available.`;
+      openButton.disabled = false;
+      return;
+    }
+    gate.remove();
+    const node = insertCardHTML(sessionHTML);
+    bootstrapSession(node);
+  });
 }
 
 function showMissingSharedSecret(status, shareCode) {
@@ -357,6 +421,29 @@ function delay(ms) {
   });
 }
 
+async function timedFetch(url, options = {}, timeoutMS = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => {
+    controller.abort();
+  }, timeoutMS);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function safeJSONParse(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function createSecret() {
   const secretInput = document.querySelector("#create-secret-input");
   const hintInput = document.querySelector("#create-hint-input");
@@ -371,6 +458,10 @@ async function createSecret() {
   const ttlSeconds = ttlSelect.selectedIndex === 0 ? null : parseTTLSelection(ttlSelect.value);
 
   if (!plaintext) {
+    return;
+  }
+  if (ownerSecretCount() >= MAX_OWNER_SECRETS) {
+    updateComposerNote(`Secret limit reached (${MAX_OWNER_SECRETS}). Remove one before creating another.`);
     return;
   }
   if (plaintext.length > MAX_SECRET_LENGTH || passphrase.length > MAX_PASSPHRASE_LENGTH || hint.length > MAX_HINT_LENGTH) {
@@ -409,7 +500,7 @@ async function createSecret() {
   syncEditorGutter(secretInput, document.querySelector("#secret-editor-gutter"));
 
   try {
-    const response = await fetch("/ui/rooms/create", {
+    const response = await timedFetch("/ui/rooms/create", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
       body: new URLSearchParams({ display_name: "Sender" }),
@@ -702,6 +793,12 @@ function bootstrapSession(node, options = {}) {
     secretRetryTimer: null,
     secretWatchdogAttempts: 0,
     secretWatchdogTimer: null,
+    signalRetryQueue: [],
+    signalRetryAttempts: 0,
+    signalRetryTimer: null,
+    reconnectAttempts: 0,
+    reconnectTimer: null,
+    pendingRemoteCandidates: [],
   };
 
   appState.sessions.set(roomCode, session);
@@ -723,33 +820,70 @@ async function restoreLocalSecrets() {
     return;
   }
 
-  for (const record of [...stored].reverse()) {
-    if (record.expiresAt && record.expiresAt <= Date.now()) {
-      removeLocalSecret(record.id);
-      continue;
-    }
+  const limited = stored.slice(0, MAX_OWNER_SECRETS);
+  if (stored.length > MAX_OWNER_SECRETS) {
+    localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(limited));
+    showToast(`Only the latest ${MAX_OWNER_SECRETS} secrets were restored in this browser.`);
+  }
 
-    const response = await fetch("/ui/rooms/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({ display_name: "Sender" }),
-    });
-    if (!response.ok) {
-      continue;
-    }
+  appState.ownerStreamSuspended = true;
+  try {
+    for (const record of [...limited].reverse()) {
+      if (record.expiresAt && record.expiresAt <= Date.now()) {
+        removeLocalSecret(record.id);
+        continue;
+      }
 
-    const html = await response.text();
-    const node = insertCardHTML(html);
-    const session = bootstrapSession(node);
-    const restoredPlaintext = await decryptLocalValue(record.localSecret);
-    session.pendingSecret = {
-      ...record,
-      searchPlaintext: restoredPlaintext,
-      createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
-      expiresAt: normalizeExpiresAt(record.expiresAt),
-      sent: false,
-    };
-    hydrateOwnerCard(session);
+      try {
+        const restoredPlaintext = await decryptLocalValue(record.localSecret);
+        const normalizedRecord = {
+          ...record,
+          searchPlaintext: restoredPlaintext,
+          createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
+          expiresAt: normalizeExpiresAt(record.expiresAt),
+          sent: false,
+        };
+        const response = await timedFetch("/ui/rooms/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body: new URLSearchParams({ display_name: "Sender" }),
+        });
+        if (!response.ok) {
+          throw new Error(`create room failed: ${response.status}`);
+        }
+
+        const html = await response.text();
+        const node = insertCardHTML(html);
+        const session = bootstrapSession(node);
+        session.pendingSecret = normalizedRecord;
+        hydrateOwnerCard(session);
+      } catch (_error) {
+        const node = insertCardHTML(
+          buildPendingOwnerCardHTML(randomLocalRoomCode(), randomLocalPeerID()),
+        );
+        const session = bootstrapSession(node, { deferStart: true, provisional: true });
+        try {
+          const restoredPlaintext = await decryptLocalValue(record.localSecret);
+          session.pendingSecret = {
+            ...record,
+            searchPlaintext: restoredPlaintext,
+            createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
+            expiresAt: normalizeExpiresAt(record.expiresAt),
+            sent: false,
+          };
+          hydrateOwnerCard(session);
+          updateStatus(session, "offline", "waiting");
+          void provisionOwnerSession(session);
+        } catch (_decryptError) {
+          removeLocalSecret(record.id);
+          await leaveSession(session, false);
+        }
+        continue;
+      }
+    }
+  } finally {
+    appState.ownerStreamSuspended = false;
+    syncOwnerEventStream();
   }
 
   showToast("Restored local secrets from this browser.");
@@ -762,7 +896,7 @@ async function provisionOwnerSession(session) {
 
   session.provisionAttempts += 1;
   try {
-    const response = await fetch("/ui/rooms/create", {
+    const response = await timedFetch("/ui/rooms/create", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
       body: new URLSearchParams({ display_name: "Sender" }),
@@ -838,6 +972,7 @@ function attachProvisionedOwnerCard(session, html) {
   syncCardSearchIndex(session);
   wireSessionUI(session);
   applyFeedFilter();
+  syncOwnerEventStream();
 }
 
 function wireSessionUI(session) {
@@ -1010,6 +1145,94 @@ function clearSecretWatchdog(session) {
   }
 }
 
+function clearSignalRetry(session) {
+  if (session?.signalRetryTimer) {
+    window.clearTimeout(session.signalRetryTimer);
+    session.signalRetryTimer = null;
+  }
+}
+
+function enqueueSignalRetry(session, payload) {
+  if (!session || session.isDeleted || session.provisional || !payload) {
+    return;
+  }
+  session.signalRetryQueue.push(payload);
+  if (session.signalRetryQueue.length > SIGNAL_RETRY_QUEUE_LIMIT) {
+    session.signalRetryQueue.shift();
+  }
+  scheduleSignalRetry(session);
+}
+
+function scheduleSignalRetry(session) {
+  if (!session || session.isDeleted || session.provisional || session.signalRetryQueue.length === 0) {
+    return;
+  }
+  if (session.signalRetryTimer) {
+    return;
+  }
+  const delay = Math.min(12000, 600 * (2 ** Math.min(session.signalRetryAttempts, SIGNAL_RETRY_MAX_ATTEMPTS)));
+  session.signalRetryTimer = window.setTimeout(async () => {
+    session.signalRetryTimer = null;
+    await flushSignalRetryQueue(session);
+  }, delay);
+}
+
+async function flushSignalRetryQueue(session) {
+  if (!session || session.isDeleted || session.provisional || session.signalRetryQueue.length === 0) {
+    clearSignalRetry(session);
+    return;
+  }
+  while (session.signalRetryQueue.length > 0) {
+    const payload = session.signalRetryQueue[0];
+    const ok = await postSignal(session, payload, { suppressRetry: true });
+    if (!ok) {
+      session.signalRetryAttempts += 1;
+      scheduleSignalRetry(session);
+      return;
+    }
+    session.signalRetryQueue.shift();
+    session.signalRetryAttempts = 0;
+  }
+  clearSignalRetry(session);
+}
+
+function clearPeerReconnect(session) {
+  if (session?.reconnectTimer) {
+    window.clearTimeout(session.reconnectTimer);
+    session.reconnectTimer = null;
+  }
+}
+
+function schedulePeerReconnect(session) {
+  if (!session || session.isDeleted || session.provisional || !session.remotePeerId) {
+    return;
+  }
+  if (session.reconnectTimer) {
+    return;
+  }
+  const delay = Math.min(
+    PEER_RECONNECT_MAX_MS,
+    PEER_RECONNECT_BASE_MS * (2 ** Math.min(session.reconnectAttempts, 3)),
+  );
+  session.reconnectTimer = window.setTimeout(async () => {
+    session.reconnectTimer = null;
+    if (!session.remotePeerId || session.isDeleted) {
+      return;
+    }
+    session.reconnectAttempts += 1;
+    resetPeerLink(session);
+    try {
+      await ensurePeerConnection(session);
+      if (session.role === "guest") {
+        session.readySent = false;
+        await notifyReady(session);
+      }
+    } catch (_error) {
+      schedulePeerReconnect(session);
+    }
+  }, delay);
+}
+
 function scheduleSecretWatchdog(session) {
   if (session.role !== "guest" || session.receivedSecret || !session.channel || session.channel.readyState !== "open") {
     return;
@@ -1034,21 +1257,146 @@ function scheduleSecretWatchdog(session) {
 }
 
 async function startSession(session) {
+  clearPeerReconnect(session);
   session.roomKeyPair = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
     ["deriveBits"],
   );
 
-  updateSessionNote(session, session.role === "owner" ? "Keep this page open while the other person reads it." : "Waiting for sender.");
+  if (session.role === "owner") {
+    updateSessionNote(session, "Keep this page open while the other person reads it.");
+    syncOwnerEventStream();
+    return;
+  }
+
+  session.eventSource?.close();
+  updateSessionNote(session, "Waiting for sender.");
   const eventsURL = `/api/rooms/${encodeURIComponent(session.roomCode)}/events?peer=${encodeURIComponent(session.peerId)}`;
   session.eventSource = new EventSource(eventsURL);
+  session.eventSource.onopen = () => {
+    if (!session.isDeleted) {
+      flushSignalRetryQueue(session).catch(() => {});
+      if (session.remotePeerId && !session.readySent) {
+        notifyReady(session).catch(() => {});
+      }
+    }
+  };
   session.eventSource.onmessage = async (event) => {
-    await handleServerEvent(session, JSON.parse(event.data));
+    const payload = safeJSONParse(event.data);
+    if (!payload) {
+      return;
+    }
+    await handleServerEvent(session, payload);
   };
   session.eventSource.onerror = () => {
     updateStatus(session, "offline", "waiting");
     updateSessionNote(session, "Connection interrupted. Retrying.");
+  };
+}
+
+function ownerSessionsForStream() {
+  return [...appState.sessions.values()]
+    .filter((session) => session.role === "owner" && !session.isDeleted && !session.provisional)
+    .sort((left, right) => left.roomCode.localeCompare(right.roomCode));
+}
+
+function ownerSecretCount() {
+  const ids = new Set();
+  readStoredSecrets().forEach((secret) => {
+    if (secret?.id) {
+      ids.add(secret.id);
+    }
+  });
+  ownerSessionsForStream().forEach((session) => {
+    if (session.pendingSecret?.id) {
+      ids.add(session.pendingSecret.id);
+    }
+  });
+  return ids.size;
+}
+
+function closeOwnerEventStream() {
+  if (appState.ownerEventSource) {
+    appState.ownerEventSource.close();
+    appState.ownerEventSource = null;
+  }
+  appState.ownerEventSourceKey = "";
+}
+
+function recoverOwnerSession(session) {
+  if (!session || session.isDeleted || session.provisional || !session.pendingSecret) {
+    return;
+  }
+  resetPeerLink(session);
+  session.eventSource?.close();
+  session.eventSource = null;
+  session.provisional = true;
+  session.leaveNotified = false;
+  session.provisionAttempts = 0;
+  hydrateOwnerCard(session);
+  updateStatus(session, "offline", "waiting");
+  void provisionOwnerSession(session);
+}
+
+function syncOwnerEventStream() {
+  if (appState.ownerStreamSuspended) {
+    return;
+  }
+  const sessions = ownerSessionsForStream();
+  if (sessions.length === 0) {
+    closeOwnerEventStream();
+    return;
+  }
+
+  const subscriptions = sessions.map((session) => `${session.roomCode}.${session.peerId}`);
+  const streamKey = subscriptions.join(",");
+  if (streamKey === appState.ownerEventSourceKey && appState.ownerEventSource) {
+    return;
+  }
+
+  closeOwnerEventStream();
+  const params = new URLSearchParams();
+  subscriptions.forEach((subscription) => params.append("sub", subscription));
+  const eventSource = new EventSource(`/api/owner/events?${params.toString()}`);
+  appState.ownerEventSource = eventSource;
+  appState.ownerEventSourceKey = streamKey;
+
+  eventSource.onopen = () => {
+    ownerSessionsForStream().forEach((session) => {
+      flushSignalRetryQueue(session).catch(() => {});
+      if (session.remotePeerId && !session.isConnected) {
+        schedulePeerReconnect(session);
+      }
+    });
+  };
+  eventSource.onmessage = async (event) => {
+    const payload = safeJSONParse(event.data);
+    if (!payload?.roomCode || !payload?.event) {
+      return;
+    }
+    const session = appState.sessions.get(String(payload.roomCode).toUpperCase());
+    if (!session || session.isDeleted) {
+      return;
+    }
+    await handleServerEvent(session, payload.event);
+  };
+  eventSource.onerror = () => {
+    const isClosed = eventSource.readyState === EventSource.CLOSED;
+    const sessions = ownerSessionsForStream();
+    if (isClosed) {
+      closeOwnerEventStream();
+    }
+    sessions.forEach((session) => {
+      if (session.isConnected) {
+        return;
+      }
+      updateStatus(session, "offline", "waiting");
+      updateSessionNote(session, "Connection interrupted. Retrying.");
+      if (isClosed) {
+        recoverOwnerSession(session);
+      }
+    });
   };
 }
 
@@ -1074,6 +1422,7 @@ async function handleServerEvent(session, event) {
       break;
     case "peer-left":
       const hadConnectedPeer = session.isConnected || session.peerValidated;
+      clearPeerReconnect(session);
       session.remotePeerId = null;
       resetPeerLink(session);
       updateStatus(session, "waiting", "waiting");
@@ -1106,6 +1455,7 @@ function syncRemotePeer(session, peers) {
       : "Sender found. Establishing live channel.");
     notifyLinkOpened(session);
   } else {
+    clearPeerReconnect(session);
     updateStatus(session, "waiting", "waiting");
     updateSessionNote(session, session.role === "owner" ? "Waiting for recipient to open the link." : "Waiting for sender to come online.");
   }
@@ -1131,6 +1481,8 @@ async function ensurePeerConnection(session) {
   session.rtc.onconnectionstatechange = () => {
     const state = session.rtc.connectionState;
     if (state === "connected") {
+      clearPeerReconnect(session);
+      session.reconnectAttempts = 0;
       session.isConnected = true;
       updateStatus(session, "connected", "connected");
       updateSessionNote(session, session.role === "owner"
@@ -1143,6 +1495,7 @@ async function ensurePeerConnection(session) {
     } else if (state === "failed" || state === "disconnected" || state === "closed") {
       session.isConnected = false;
       updateStatus(session, "waiting", "waiting");
+      schedulePeerReconnect(session);
     }
   };
   session.rtc.ondatachannel = (event) => bindDataChannel(session, event.channel);
@@ -1206,9 +1559,14 @@ function bindDataChannel(session, channel) {
     clearSecretWatchdog(session);
     updateStatus(session, "waiting", "waiting");
     updateSessionNote(session, "Live link closed.");
+    schedulePeerReconnect(session);
   };
   channel.onmessage = async (event) => {
-    await handlePeerMessage(session, JSON.parse(event.data));
+    const payload = safeJSONParse(event.data);
+    if (!payload) {
+      return;
+    }
+    await handlePeerMessage(session, payload);
   };
 }
 
@@ -1231,8 +1589,13 @@ async function handleSignal(session, signal) {
       await maybeCreateOffer(session);
       break;
     case "candidate":
-      if (session.rtc) {
+      if (!signal.payload) {
+        return;
+      }
+      if (session.rtc?.remoteDescription) {
         await session.rtc.addIceCandidate(signal.payload);
+      } else {
+        session.pendingRemoteCandidates.push(signal.payload);
       }
       break;
     default:
@@ -1246,6 +1609,7 @@ async function handleOffer(session, signal) {
     await ensurePeerConnection(session);
   }
   await session.rtc.setRemoteDescription(signal.payload.sdp);
+  await flushPendingCandidates(session);
   await deriveBaseKey(session, signal.payload.sessionPublicKey);
   const answer = await session.rtc.createAnswer();
   await session.rtc.setLocalDescription(answer);
@@ -1263,8 +1627,25 @@ async function handleOffer(session, signal) {
 
 async function handleAnswer(session, signal) {
   await session.rtc.setRemoteDescription(signal.payload.sdp);
+  await flushPendingCandidates(session);
   await deriveBaseKey(session, signal.payload.sessionPublicKey);
   flushPendingSecret(session);
+}
+
+async function flushPendingCandidates(session) {
+  if (!session?.rtc?.remoteDescription || session.pendingRemoteCandidates.length === 0) {
+    return;
+  }
+  const pending = [...session.pendingRemoteCandidates];
+  session.pendingRemoteCandidates = [];
+  for (const candidate of pending) {
+    try {
+      await session.rtc.addIceCandidate(candidate);
+    } catch (_error) {
+      session.pendingRemoteCandidates.push(candidate);
+      break;
+    }
+  }
 }
 
 async function deriveBaseKey(session, remotePublicJwk) {
@@ -1296,9 +1677,10 @@ async function derivePayloadKey(session, otp) {
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-async function postSignal(session, payload) {
+async function postSignal(session, payload, options = {}) {
+  const suppressRetry = options.suppressRetry === true;
   try {
-    const response = await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/signal`, {
+    const response = await timedFetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/signal`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -1310,6 +1692,9 @@ async function postSignal(session, payload) {
   } catch (_error) {
     if (session.role === "owner" && !session.provisional) {
       updateStatus(session, "offline", "waiting");
+    }
+    if (!suppressRetry) {
+      enqueueSignalRetry(session, payload);
     }
     return false;
   }
@@ -1693,6 +2078,8 @@ async function leaveSession(session, animateRemove = false) {
     clearSecretExpiryTimer(session.roomCode);
     clearSecretRetry(session);
     clearSecretWatchdog(session);
+    clearSignalRetry(session);
+    clearPeerReconnect(session);
     session.eventSource?.close();
     session.channel?.close();
     session.rtc?.close();
@@ -1701,6 +2088,9 @@ async function leaveSession(session, animateRemove = false) {
     }
   } finally {
     appState.sessions.delete(session.roomCode);
+    if (session.role === "owner") {
+      syncOwnerEventStream();
+    }
     if (animateRemove) {
       await animateCardRemoval(session.node);
     } else {
@@ -1716,7 +2106,7 @@ async function notifySessionLeave(session) {
     return;
   }
   session.leaveNotified = true;
-  await fetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`, {
+  await timedFetch(`/api/rooms/${encodeURIComponent(session.roomCode)}/leave?peer=${encodeURIComponent(session.peerId)}`, {
     method: "POST",
     keepalive: true,
   }).catch(() => {});
@@ -1754,10 +2144,14 @@ function resetPeerLink(session) {
   session.lastSecretSentAt = 0;
   session.secretRetryAttempts = 0;
   session.secretWatchdogAttempts = 0;
+  session.signalRetryAttempts = 0;
+  session.signalRetryQueue = [];
+  session.pendingRemoteCandidates = [];
   session.validationChallenge = null;
   session.remoteBrowserId = null;
   session.remoteIdentityPublicKey = null;
   session.helloSent = false;
+  session.offerReady = false;
   session.receivedSecret = null;
   session.linkOpenedToastShown = false;
   session.validationToastShown = false;
@@ -2014,7 +2408,7 @@ function persistLocalSecret(secret) {
     expiresAt: normalizeExpiresAt(secret.expiresAt),
     active: secret.active,
   });
-  localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(secrets));
+  localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(secrets.slice(0, MAX_OWNER_SECRETS)));
 }
 
 function removeLocalSecret(secretID) {
@@ -2099,13 +2493,19 @@ function setupFeedSearch() {
 
 function setupConnectivityRecovery() {
   window.addEventListener("online", () => {
+    syncOwnerEventStream();
     appState.sessions.forEach((session) => {
       if (session.provisional) {
         void provisionOwnerSession(session);
       }
+      void flushSignalRetryQueue(session);
+      if (!session.provisional && session.remotePeerId && !session.isConnected) {
+        schedulePeerReconnect(session);
+      }
     });
   });
   window.addEventListener("beforeunload", () => {
+    closeOwnerEventStream();
     appState.sessions.forEach((session) => {
       notifySessionLeaveSoon(session);
       session.eventSource?.close();
@@ -2115,6 +2515,7 @@ function setupConnectivityRecovery() {
     syncConnectivityIndicator();
   });
   window.addEventListener("pagehide", () => {
+    closeOwnerEventStream();
     appState.sessions.forEach((session) => {
       notifySessionLeaveSoon(session);
     });
