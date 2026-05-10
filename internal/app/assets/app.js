@@ -33,6 +33,7 @@ const appState = {
   ownerEventSource: null,
   ownerEventSourceKey: "",
   ownerStreamSuspended: false,
+  initialComposerVisibilitySynced: false,
 };
 const LOCAL_VAULT_KEY_STORAGE = "shhx.localVaultKey";
 const LEGACY_LOCAL_VAULT_KEY_STORAGE = "schh.localVaultKey";
@@ -2388,6 +2389,12 @@ function syncFeedEmptyState() {
   empty.hidden = cards.length > 0;
   if (searchWrap) {
     searchWrap.hidden = cards.length === 0;
+  }
+  if (!appState.initialComposerVisibilitySynced) {
+    appState.initialComposerVisibilitySynced = true;
+    if (cards.length === 0 && !document.body?.dataset?.shareCode) {
+      appState.composerCollapseController?.(false);
+    }
   }
 }
 

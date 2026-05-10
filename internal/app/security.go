@@ -55,16 +55,16 @@ type rateLimiter struct {
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{
 		limits: map[string]rateConfig{
-			"index":   {burst: 60, refillPerSec: 1, cleanupWindow: 15 * time.Minute},
-			"preview": {burst: 30, refillPerSec: 0.5, cleanupWindow: 15 * time.Minute},
-			"create":  {burst: 12, refillPerSec: 0.2, cleanupWindow: 20 * time.Minute},
-			"join":    {burst: 20, refillPerSec: 0.5, cleanupWindow: 20 * time.Minute},
+			"index":        {burst: 60, refillPerSec: 1, cleanupWindow: 15 * time.Minute},
+			"preview":      {burst: 30, refillPerSec: 0.5, cleanupWindow: 15 * time.Minute},
+			"create":       {burst: 12, refillPerSec: 0.2, cleanupWindow: 20 * time.Minute},
+			"join":         {burst: 20, refillPerSec: 0.5, cleanupWindow: 20 * time.Minute},
 			"owner-events": {burst: 12, refillPerSec: 0.25, cleanupWindow: 30 * time.Minute},
-			"events":  {burst: 20, refillPerSec: 0.5, cleanupWindow: 30 * time.Minute},
-			"signal":  {burst: 180, refillPerSec: 3, cleanupWindow: 20 * time.Minute},
-			"leave":   {burst: 40, refillPerSec: 1, cleanupWindow: 20 * time.Minute},
-			"static":  {burst: 120, refillPerSec: 4, cleanupWindow: 15 * time.Minute},
-			"other":   {burst: 30, refillPerSec: 0.5, cleanupWindow: 15 * time.Minute},
+			"events":       {burst: 20, refillPerSec: 0.5, cleanupWindow: 30 * time.Minute},
+			"signal":       {burst: 180, refillPerSec: 3, cleanupWindow: 20 * time.Minute},
+			"leave":        {burst: 40, refillPerSec: 1, cleanupWindow: 20 * time.Minute},
+			"static":       {burst: 120, refillPerSec: 4, cleanupWindow: 15 * time.Minute},
+			"other":        {burst: 30, refillPerSec: 0.5, cleanupWindow: 15 * time.Minute},
 		},
 		buckets: make(map[string]*rateBucket),
 	}
