@@ -58,6 +58,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupConnectivityIndicator();
     syncFeedEmptyState();
     await restoreLocalSecrets();
+    syncInitialComposerVisibility();
     await autoJoinSharedLink();
   } finally {
     markAppReady();
@@ -2390,12 +2391,22 @@ function syncFeedEmptyState() {
   if (searchWrap) {
     searchWrap.hidden = cards.length === 0;
   }
-  if (!appState.initialComposerVisibilitySynced) {
-    appState.initialComposerVisibilitySynced = true;
-    if (cards.length === 0 && !document.body?.dataset?.shareCode) {
-      appState.composerCollapseController?.(false);
-    }
+}
+
+function syncInitialComposerVisibility() {
+  if (appState.initialComposerVisibilitySynced) {
+    return;
   }
+  appState.initialComposerVisibilitySynced = true;
+  if (document.body?.dataset?.shareCode) {
+    return;
+  }
+  const feed = document.querySelector("#feed");
+  if (!feed) {
+    return;
+  }
+  const cards = feed.querySelectorAll(".secret-card");
+  appState.composerCollapseController?.(cards.length > 3);
 }
 
 function persistLocalSecret(secret) {
