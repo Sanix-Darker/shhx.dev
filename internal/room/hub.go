@@ -17,6 +17,7 @@ var (
 	ErrRoomNotFound = errors.New("room not found")
 	ErrRoomFull     = errors.New("room already has two peers")
 	ErrPeerNotFound = errors.New("peer not found")
+	ErrRoomExists   = errors.New("room already exists")
 )
 
 type Event struct {
@@ -79,10 +80,30 @@ func NewHub() *Hub {
 }
 
 func (h *Hub) CreateRoom(ownerID, displayName string) string {
+	return h.createRoom(ownerID, displayName, "")
+}
+
+func (h *Hub) CreateRoomWithCode(ownerID, displayName, code string) error {
+	if code == "" {
+		return errors.New("room code required")
+	}
+	created := h.createRoom(ownerID, displayName, code)
+	if created == "" {
+		return ErrRoomExists
+	}
+	return nil
+}
+
+func (h *Hub) createRoom(ownerID, displayName, requestedCode string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	code := randomCodeLocked(h.rooms)
+	code := requestedCode
+	if code == "" {
+		code = randomCodeLocked(h.rooms)
+	} else if _, exists := h.rooms[code]; exists {
+		return ""
+	}
 	now := time.Now()
 	state := &roomState{
 		code:       code,

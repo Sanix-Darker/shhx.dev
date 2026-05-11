@@ -488,6 +488,7 @@ async function createSecret() {
     expiresAt: ttlSeconds === null ? null : Date.now() + (ttlSeconds * 1000),
     active: true,
     sent: false,
+    roomCode: null,
   };
   secretInput.value = "";
   hintInput.value = "";
@@ -515,6 +516,7 @@ async function createSecret() {
     const node = insertCardHTML(html, { staged: true });
     const session = bootstrapSession(node);
     session.pendingSecret = pendingSecret;
+    session.pendingSecret.roomCode = session.roomCode;
     hydrateOwnerCard(session);
     persistLocalSecret(session.pendingSecret);
     showToast("Secret created. Share the link while you stay online.", {
@@ -531,6 +533,7 @@ async function createSecret() {
     const node = insertCardHTML(buildPendingOwnerCardHTML(provisionalRoomCode, provisionalPeerID), { staged: true });
     const session = bootstrapSession(node, { deferStart: true, provisional: true });
     session.pendingSecret = pendingSecret;
+    session.pendingSecret.roomCode = provisionalRoomCode;
     persistLocalSecret(session.pendingSecret);
     hydrateOwnerCard(session);
     updateStatus(session, "offline", "waiting");
@@ -840,6 +843,7 @@ async function restoreLocalSecrets() {
         const restoredPlaintext = await decryptLocalValue(record.localSecret);
         const normalizedRecord = {
           ...record,
+          roomCode: record.roomCode || null,
           searchPlaintext: restoredPlaintext,
           createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
           expiresAt: normalizeExpiresAt(record.expiresAt),
@@ -848,7 +852,10 @@ async function restoreLocalSecrets() {
         const response = await timedFetch("/ui/rooms/create", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-          body: new URLSearchParams({ display_name: "Sender" }),
+          body: new URLSearchParams({
+            display_name: "Sender",
+            ...(normalizedRecord.roomCode ? { room_code: normalizedRecord.roomCode } : {}),
+          }),
         });
         if (!response.ok) {
           throw new Error(`create room failed: ${response.status}`);
@@ -858,16 +865,18 @@ async function restoreLocalSecrets() {
         const node = insertCardHTML(html);
         const session = bootstrapSession(node);
         session.pendingSecret = normalizedRecord;
+        session.pendingSecret.roomCode = session.roomCode;
         hydrateOwnerCard(session);
       } catch (_error) {
         const node = insertCardHTML(
-          buildPendingOwnerCardHTML(randomLocalRoomCode(), randomLocalPeerID()),
+          buildPendingOwnerCardHTML(record.roomCode || randomLocalRoomCode(), randomLocalPeerID()),
         );
         const session = bootstrapSession(node, { deferStart: true, provisional: true });
         try {
           const restoredPlaintext = await decryptLocalValue(record.localSecret);
           session.pendingSecret = {
             ...record,
+            roomCode: record.roomCode || session.roomCode,
             searchPlaintext: restoredPlaintext,
             createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
             expiresAt: normalizeExpiresAt(record.expiresAt),
@@ -901,7 +910,10 @@ async function provisionOwnerSession(session) {
     const response = await timedFetch("/ui/rooms/create", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: new URLSearchParams({ display_name: "Sender" }),
+      body: new URLSearchParams({
+        display_name: "Sender",
+        ...(session.pendingSecret?.roomCode ? { room_code: session.pendingSecret.roomCode } : {}),
+      }),
     });
     if (!response.ok) {
       throw new Error(`create room failed: ${response.status}`);
@@ -971,6 +983,10 @@ function attachProvisionedOwnerCard(session, html) {
   session.secretRetryAttempts = 0;
   appState.sessions.delete(previousKey);
   appState.sessions.set(session.roomCode, session);
+  if (session.pendingSecret) {
+    session.pendingSecret.roomCode = session.roomCode;
+    persistLocalSecret(session.pendingSecret);
+  }
   syncCardSearchIndex(session);
   wireSessionUI(session);
   applyFeedFilter();
@@ -2416,6 +2432,7 @@ function persistLocalSecret(secret) {
   const secrets = readStoredSecrets().filter((item) => item.id !== secret.id);
   secrets.unshift({
     id: secret.id,
+    roomCode: String(secret.roomCode || "").trim() || null,
     hint: String(secret.hint || "").trim(),
     createdAt: normalizeCreatedAt(secret.createdAt),
     burnAfterRead: secret.burnAfterRead,
@@ -2450,6 +2467,7 @@ function readStoredSecrets() {
     }
     return parsed.map((item) => ({
       ...item,
+      roomCode: typeof item.roomCode === "string" ? item.roomCode.trim().toUpperCase() : null,
       hint: typeof item.hint === "string" ? item.hint.trim() : "",
       createdAt: normalizeCreatedAt(item.createdAt),
       expiresAt: normalizeExpiresAt(item.expiresAt),
