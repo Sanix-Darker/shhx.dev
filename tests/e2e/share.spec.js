@@ -56,6 +56,104 @@ test.describe("live share flow", () => {
     await owner.close();
   });
 
+  test("shares and decrypts a TTL secret without stalling", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "ttl secret from owner",
+      hint: "ttl-basic",
+      ttl: "300",
+    });
+
+    await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("ttl secret from owner");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("keeps a TTL secret deliverable after owner reload", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "ttl secret after reload",
+      hint: "ttl-reload",
+      ttl: "300",
+    });
+
+    await ownerPage.reload();
+    await expect(ownerPage.locator('#feed details.secret-card[data-room-code="' + roomCode + '"]')).toBeVisible();
+
+    await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("ttl secret after reload");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("shares a TTL secret with passphrase without stalling", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "ttl passphrase secret",
+      passphrase: "ttl-passphrase",
+      hint: "ttl-pass",
+      ttl: "300",
+    });
+
+    await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(recipientPage.getByPlaceholder("Enter the passphrase")).toBeVisible();
+    await recipientPage.getByPlaceholder("Enter the passphrase").fill("ttl-passphrase");
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("ttl passphrase secret");
+
+    await recipient.close();
+    await owner.close();
+  });
+
+  test("shares a TTL secret with delete on read", async ({ browser }) => {
+    const owner = await browser.newContext();
+    const recipient = await browser.newContext();
+    const ownerPage = await owner.newPage();
+    const recipientPage = await recipient.newPage();
+
+    await ownerPage.goto("/");
+    const roomCode = await createSecret(ownerPage, {
+      secret: "ttl burn secret",
+      hint: "ttl-burn",
+      ttl: "300",
+    });
+
+    await recipientPage.goto(`/${roomCode}`);
+    await recipientPage.getByRole("button", { name: "Open live secret" }).click();
+    await expect(recipientPage.getByRole("button", { name: "Decrypt secret" })).toBeVisible();
+    await recipientPage.getByRole("button", { name: "Decrypt secret" }).click();
+    await expect(recipientPage.locator("[data-secret-plaintext]")).toContainText("ttl burn secret");
+    await expect(ownerPage.locator('#feed details.secret-card[data-room-code="' + roomCode + '"] [data-secret-meta]')).toContainText("Deleted on read.");
+
+    await recipient.close();
+    await owner.close();
+  });
+
   test("recovers when an earlier opener leaves before the real recipient arrives", async ({ browser }) => {
     const owner = await browser.newContext();
     const preview = await browser.newContext();
@@ -125,7 +223,8 @@ test.describe("live share flow", () => {
 
 async function createSecret(page, options) {
   const composerInput = page.locator("#create-secret-input");
-  if (!(await composerInput.isVisible())) {
+  const composerVisible = await composerInput.isVisible().catch(() => false);
+  if (!composerVisible) {
     await page.locator("#composer > summary").click();
     await expect(composerInput).toBeVisible();
   }
@@ -135,6 +234,12 @@ async function createSecret(page, options) {
   }
   if (options.passphrase) {
     await page.locator("#create-passphrase-input").fill(options.passphrase);
+  }
+  if (options.ttl) {
+    await page.locator("#create-ttl-select").selectOption(options.ttl);
+  }
+  if (options.burnAfterRead === false) {
+    await page.locator("#create-burn-button").click();
   }
   await page.locator("#create-secret-button").click();
 

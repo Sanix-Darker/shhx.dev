@@ -267,8 +267,21 @@ func (s *Server) handleCreateRoomCard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	displayName := sanitizeDisplayName(r.FormValue("display_name"))
+	requestedRoomCode := strings.ToUpper(strings.TrimSpace(r.FormValue("room_code")))
+	if requestedRoomCode != "" && !validRoomCode(requestedRoomCode) {
+		http.Error(w, errInvalidRoomCode.Error(), http.StatusBadRequest)
+		return
+	}
 	peerID := randomToken(10)
-	roomCode := s.hub.CreateRoom(peerID, displayName)
+	roomCode := requestedRoomCode
+	if requestedRoomCode != "" {
+		if err := s.hub.CreateRoomWithCode(peerID, displayName, requestedRoomCode); err != nil {
+			http.Error(w, err.Error(), statusForErr(err))
+			return
+		}
+	} else {
+		roomCode = s.hub.CreateRoom(peerID, displayName)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.templates.ExecuteTemplate(w, "room-card", roomCardData{
@@ -666,6 +679,8 @@ func statusForErr(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, room.ErrPeerNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, room.ErrRoomExists):
+		return http.StatusConflict
 	default:
 		return http.StatusBadRequest
 	}
