@@ -1,6 +1,7 @@
 BINARY := dist/shhx
 GOFLAGS := -trimpath
-LDFLAGS := -s -w -buildid=
+BUILD_VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -s -w -buildid= -X main.buildVersion=$(BUILD_VERSION)
 
 .PHONY: fmt assets test test-e2e build run clean
 
