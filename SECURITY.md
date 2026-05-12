@@ -38,6 +38,12 @@ Owner-side local feed persistence is encrypted at rest in the browser, but it st
 
 If a browser profile or device is compromised, locally stored encrypted records and any decrypted plaintext shown in the UI may be exposed.
 
+Feed export/import is local-only. The exported file is encrypted in the browser with the provided backup password before it is downloaded, and import re-encrypts restored records into the current browser vault.
+
+## Operational Visibility
+
+The health endpoint is intentionally minimal. It reports only service availability and must not expose room, peer, user, or secret metadata.
+
 ## Disclosure
 
 If you find a security issue, do not open a public issue with exploit details first.
