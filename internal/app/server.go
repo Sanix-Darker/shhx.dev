@@ -27,21 +27,23 @@ import (
 var assets embed.FS
 
 type Server struct {
-	hub       *room.Hub
-	limiter   *rateLimiter
-	templates *template.Template
-	static    http.Handler
+	hub          *room.Hub
+	limiter      *rateLimiter
+	templates    *template.Template
+	static       http.Handler
+	buildVersion string
 }
 
 type pageData struct {
-	Title        string
-	ShareCode    string
-	StyleNonce   string
-	ICEServers   string
-	PreviewTitle string
-	PreviewDesc  string
-	PreviewImage string
-	PreviewURL   string
+	Title          string
+	ShareCode      string
+	StyleNonce     string
+	ICEServers     string
+	ProjectVersion string
+	PreviewTitle   string
+	PreviewDesc    string
+	PreviewImage   string
+	PreviewURL     string
 }
 
 type roomCardData struct {
@@ -58,7 +60,7 @@ type ownerRoomEvent struct {
 
 const defaultICEServersJSON = `[{"urls":["stun:stun.l.google.com:19302"]}]`
 
-func NewServer() (*Server, error) {
+func NewServer(buildVersion string) (*Server, error) {
 	tmpl, err := template.ParseFS(assets, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -70,10 +72,11 @@ func NewServer() (*Server, error) {
 	}
 
 	return &Server{
-		hub:       room.NewHub(),
-		limiter:   newRateLimiter(),
-		templates: tmpl,
-		static:    http.FileServer(http.FS(staticFS)),
+		hub:          room.NewHub(),
+		limiter:      newRateLimiter(),
+		templates:    tmpl,
+		static:       http.FileServer(http.FS(staticFS)),
+		buildVersion: strings.TrimSpace(buildVersion),
 	}, nil
 }
 
@@ -110,14 +113,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.templates.ExecuteTemplate(w, "layout", pageData{
-		Title:        "shhx",
-		ShareCode:    shareCode,
-		StyleNonce:   cspStyleNonce(r),
-		ICEServers:   iceServersJSON(),
-		PreviewTitle: title,
-		PreviewDesc:  desc,
-		PreviewImage: baseURL + "/preview.svg",
-		PreviewURL:   baseURL + r.URL.RequestURI(),
+		Title:          "shhx",
+		ShareCode:      shareCode,
+		StyleNonce:     cspStyleNonce(r),
+		ICEServers:     iceServersJSON(),
+		ProjectVersion: s.buildVersion,
+		PreviewTitle:   title,
+		PreviewDesc:    desc,
+		PreviewImage:   baseURL + "/preview.svg",
+		PreviewURL:     baseURL + r.URL.RequestURI(),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

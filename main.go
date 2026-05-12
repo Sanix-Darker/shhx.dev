@@ -9,13 +9,15 @@ import (
 	"shhx.dev/internal/app"
 )
 
+var buildVersion = "dev"
+
 func main() {
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = ":8194"
 	}
 
-	server, err := app.NewServer()
+	server, err := app.NewServer(buildVersion)
 	if err != nil {
 		log.Fatalf("create server: %v", err)
 	}
