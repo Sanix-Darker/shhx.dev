@@ -18,7 +18,7 @@ import (
 )
 
 func TestCreateRoomRejectsOversizedForm(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestCreateRoomRejectsOversizedForm(t *testing.T) {
 }
 
 func TestJoinRoomRejectsInvalidRoomCode(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestJoinRoomRejectsInvalidRoomCode(t *testing.T) {
 }
 
 func TestSignalRejectsUnknownFields(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestSignalRejectsUnknownFields(t *testing.T) {
 }
 
 func TestRateLimitCreateRoute(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestRateLimitCreateRoute(t *testing.T) {
 }
 
 func TestSecurityHeadersPresent(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestIndexEmbedsEphemeralTurnConfig(t *testing.T) {
 	t.Setenv("SHHX_TURN_URIS", "stun:turn.example.com:3478,turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp")
 	t.Setenv("SHHX_TURN_TTL_SECONDS", "600")
 
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestIndexEmbedsEphemeralTurnConfig(t *testing.T) {
 }
 
 func TestCreateJoinAndSignalFlowOverHTTP(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestCreateJoinAndSignalFlowOverHTTP(t *testing.T) {
 }
 
 func TestPreviewGuestDoesNotBlockRealRecipientOverHTTP(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestPreviewGuestDoesNotBlockRealRecipientOverHTTP(t *testing.T) {
 }
 
 func TestActiveGuestStillBlocksSecondRecipientOverHTTP(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestActiveGuestStillBlocksSecondRecipientOverHTTP(t *testing.T) {
 }
 
 func TestJoinRejectsRoomWhenOwnerWentStaleOverHTTP(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestJoinRejectsRoomWhenOwnerWentStaleOverHTTP(t *testing.T) {
 }
 
 func TestOwnerEventsMultiplexRoomsOverHTTP(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestOwnerEventsMultiplexRoomsOverHTTP(t *testing.T) {
 }
 
 func TestOwnerEventsRejectTooManySubscriptions(t *testing.T) {
-	server, err := NewServer()
+	server, err := NewServer("test")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

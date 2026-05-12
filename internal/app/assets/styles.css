@@ -848,6 +848,7 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   justify-content: center;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .browser-id-badge {
   max-width: 164px;
@@ -869,6 +870,14 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
   text-overflow: ellipsis;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.project-version-badge {
+  cursor: default;
+  user-select: none;
+}
+.project-version-badge:hover {
+  border-color: var(--line);
+  background: var(--surface);
 }
 .browser-id-badge:hover {
   border-color: var(--text);
