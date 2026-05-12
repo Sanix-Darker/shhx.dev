@@ -23,7 +23,7 @@ import (
 	"shhx.dev/internal/room"
 )
 
-//go:embed templates/*.html static/*
+//go:embed templates/*.html static
 var assets embed.FS
 
 type Server struct {
