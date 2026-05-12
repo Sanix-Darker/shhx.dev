@@ -792,6 +792,13 @@ button:disabled { cursor: not-allowed; opacity: 0.42; }
 }
 .guest-factor-row .share-link-input {
   width: 100%;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.guest-factor-row .share-link-input:focus {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: var(--surface-strong);
 }
 .guest-factor-row .icon-button {
   justify-self: stretch;

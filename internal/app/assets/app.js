@@ -16,6 +16,7 @@ const PEER_RECONNECT_BASE_MS = 1200;
 const PEER_RECONNECT_MAX_MS = 10000;
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_OWNER_SECRETS = 100;
+const OPENPGP_SCRIPT_SRC = "/static/vendor/openpgp.min.js";
 
 const appState = {
   identity: null,
@@ -34,6 +35,7 @@ const appState = {
   ownerEventSourceKey: "",
   ownerStreamSuspended: false,
   initialComposerVisibilitySynced: false,
+  openpgpPromise: null,
 };
 const LOCAL_VAULT_KEY_STORAGE = "shhx.localVaultKey";
 const LEGACY_LOCAL_VAULT_KEY_STORAGE = "schh.localVaultKey";
@@ -62,6 +64,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await autoJoinSharedLink();
   } finally {
     markAppReady();
+    warmOpenPGPLibrary();
   }
 });
 
@@ -1695,6 +1698,77 @@ async function derivePayloadKey(session, otp) {
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
+async function ensureOpenPGPLibrary() {
+  if (globalThis.openpgp) {
+    return globalThis.openpgp;
+  }
+  if (!appState.openpgpPromise) {
+    appState.openpgpPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = OPENPGP_SCRIPT_SRC;
+      script.async = true;
+      script.onload = () => {
+        if (globalThis.openpgp) {
+          resolve(globalThis.openpgp);
+          return;
+        }
+        reject(new Error("OpenPGP library unavailable"));
+      };
+      script.onerror = () => reject(new Error("OpenPGP library unavailable"));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      appState.openpgpPromise = null;
+      throw error;
+    });
+  }
+  return appState.openpgpPromise;
+}
+
+function warmOpenPGPLibrary() {
+  const warm = () => {
+    void ensureOpenPGPLibrary().catch(() => {});
+  };
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(warm, { timeout: 2000 });
+    return;
+  }
+  window.setTimeout(warm, 300);
+}
+
+async function derivePGPEnvelopePassphrase(session, secretID) {
+  const seed = [
+    "shhx-pgp-envelope",
+    String(session.roomCode || "").trim(),
+    String(secretID || "").trim(),
+    bytesToBase64(session.baseKeyBytes || new Uint8Array()),
+  ].join("|");
+  const digest = await crypto.subtle.digest("SHA-256", textEncoder.encode(seed));
+  return bytesToBase64(new Uint8Array(digest));
+}
+
+async function encryptPGPEnvelope(session, secretID, plaintext) {
+  const openpgp = await ensureOpenPGPLibrary();
+  const passphrase = await derivePGPEnvelopePassphrase(session, secretID);
+  const message = await openpgp.createMessage({ text: plaintext });
+  return openpgp.encrypt({
+    message,
+    passwords: [passphrase],
+    format: "armored",
+  });
+}
+
+async function decryptPGPEnvelope(session, secretID, armored) {
+  const openpgp = await ensureOpenPGPLibrary();
+  const passphrase = await derivePGPEnvelopePassphrase(session, secretID);
+  const message = await openpgp.readMessage({ armoredMessage: armored });
+  const { data } = await openpgp.decrypt({
+    message,
+    passwords: [passphrase],
+    format: "utf8",
+  });
+  return typeof data === "string" ? data : textDecoder.decode(data);
+}
+
 async function postSignal(session, payload, options = {}) {
   const suppressRetry = options.suppressRetry === true;
   try {
@@ -1731,22 +1805,28 @@ async function flushPendingSecret(session, options = {}) {
     return;
   }
 
-  const plaintext = await decryptLocalValue(session.pendingSecret.localSecret);
-  const factor = await deriveSecretFactor(session.pendingSecret);
-  const payloadKey = await derivePayloadKey(session, factor);
-  const secret = await encryptSecret(payloadKey, plaintext);
-  const message = {
-    kind: "secret",
-    id: session.pendingSecret.id,
-    burnAfterRead: session.pendingSecret.burnAfterRead,
-    authMode: session.pendingSecret.authMode,
-    active: session.pendingSecret.active,
-    ciphertext: secret.ciphertext,
-    iv: secret.iv,
-  };
   try {
+    const plaintext = await decryptLocalValue(session.pendingSecret.localSecret);
+    const factor = await deriveSecretFactor(session.pendingSecret);
+    const payloadKey = await derivePayloadKey(session, factor);
+    const pgpEnvelope = await encryptPGPEnvelope(session, session.pendingSecret.id, plaintext);
+    const wrappedPayload = JSON.stringify({
+      layer: "pgp",
+      payload: pgpEnvelope,
+    });
+    const secret = await encryptSecret(payloadKey, wrappedPayload);
+    const message = {
+      kind: "secret",
+      id: session.pendingSecret.id,
+      burnAfterRead: session.pendingSecret.burnAfterRead,
+      authMode: session.pendingSecret.authMode,
+      active: session.pendingSecret.active,
+      ciphertext: secret.ciphertext,
+      iv: secret.iv,
+    };
     session.channel.send(JSON.stringify(message));
   } catch (_error) {
+    updateSessionNote(session, "Hidden GPG layer unavailable. Retrying.");
     scheduleSecretRetry(session);
     return;
   }
@@ -1843,6 +1923,16 @@ async function handleIdentityMessage(session, message) {
   }
 }
 
+async function resolveReceivedSecretPlaintext(session, message, otp) {
+  const payloadKey = await derivePayloadKey(session, message.authMode === "none" ? "" : otp);
+  const transportPayload = await decryptSecret(payloadKey, message);
+  const envelope = safeJSONParse(transportPayload);
+  if (!envelope || envelope.layer !== "pgp" || typeof envelope.payload !== "string") {
+    return transportPayload;
+  }
+  return decryptPGPEnvelope(session, message.id, envelope.payload);
+}
+
 function renderReceivedSecret(session, message) {
   const node = session.node;
   clearSecretWatchdog(session);
@@ -1896,8 +1986,7 @@ function renderReceivedSecret(session, message) {
       return;
     }
     try {
-      const payloadKey = await derivePayloadKey(session, message.authMode === "none" ? "" : otpInput.value.trim());
-      const plaintext = await decryptSecret(payloadKey, message);
+      const plaintext = await resolveReceivedSecretPlaintext(session, message, otpInput.value.trim());
       setAnimatedText(node.querySelector("[data-secret-plaintext]"), plaintext);
       node.querySelector("[data-secret-plaintext]").hidden = false;
       node.querySelector("[data-secret-placeholder]").hidden = true;
