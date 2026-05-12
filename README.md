@@ -19,6 +19,7 @@ It is built for the narrow case where one browser creates a secret, stays online
 - optional authenticator-code factor
 - optional TTL auto-wipe
 - local browser persistence for the sender feed
+- local encrypted feed export/import
 - bulk owner actions for toggle, email, and delete
 - embedded frontend assets in the final binary
 
@@ -66,8 +67,10 @@ If the sender disconnects, the live handoff stops. `shhx` is not an offline drop
   - a passphrase
   - the current authenticator code
 - owner-side local feed storage is encrypted at rest in the browser
+- feed exports are encrypted locally with a user-supplied password before download
 - the server only sees metadata needed for live signaling
 - request limits, validation, rate limiting, and strict security headers are enabled on the HTTP side
+- `/healthz` returns only minimal service health, never room or secret data
 
 ## Endpoint Caveat
 
@@ -81,7 +84,7 @@ If the sender disconnects, the live handoff stops. `shhx` is not an offline drop
 
 - both sides must be online at the same time
 - connectivity depends on browser WebRTC support and network conditions
-- restrictive networks can still break peer connectivity
+- restrictive networks can still break peer connectivity without a working TURN relay
 - there is no account recovery
 - there is no offline delivery
 
