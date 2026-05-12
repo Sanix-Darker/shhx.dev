@@ -17,6 +17,10 @@ const PEER_RECONNECT_MAX_MS = 10000;
 const FETCH_TIMEOUT_MS = 10000;
 const MAX_OWNER_SECRETS = 100;
 const OPENPGP_SCRIPT_SRC = "/static/vendor/openpgp.min.js";
+const EXPORT_KIND = "shhx-feed-export";
+const EXPORT_VERSION = 1;
+const EXPORT_KDF_ITERATIONS = 250000;
+const EXPORT_PASSWORD_MIN_LENGTH = 8;
 
 const appState = {
   identity: null,
@@ -54,6 +58,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupComposer();
     setupBulkActions();
     setupFeedSearch();
+    setupFeedTransfer();
     setupFeedScrollMotion();
     setupComposerCollapse();
     setupConnectivityRecovery();
@@ -2266,8 +2271,11 @@ function resetPeerLink(session) {
 }
 
 function updateSessionNote(session, text) {
-  void session;
-  void text;
+  const meta = session?.node?.querySelector("[data-secret-meta]");
+  if (!meta || !text) {
+    return;
+  }
+  meta.textContent = text;
 }
 
 function updateStatus(session, label, state) {
@@ -2614,6 +2622,269 @@ function setupFeedSearch() {
     syncSearchComposerState();
     applyFeedFilter();
   });
+}
+
+function setupFeedTransfer() {
+  const exportButton = document.querySelector("#feed-export-button");
+  const importButton = document.querySelector("#feed-import-button");
+  const importInput = document.querySelector("#feed-import-file");
+  if (!exportButton || !importButton || !importInput) {
+    return;
+  }
+
+  exportButton.addEventListener("click", () => {
+    exportLocalFeed().catch(() => {
+      showToast("Encrypted feed export failed.");
+    });
+  });
+  importButton.addEventListener("click", () => {
+    importInput.value = "";
+    importInput.click();
+  });
+  importInput.addEventListener("change", () => {
+    const file = importInput.files?.[0];
+    if (!file) {
+      return;
+    }
+    importLocalFeed(file).catch(() => {
+      showToast("Encrypted feed import failed.");
+    });
+  });
+}
+
+function readExportPassword(action) {
+  const password = window.prompt(`${action} password, at least ${EXPORT_PASSWORD_MIN_LENGTH} characters`);
+  if (password === null) {
+    return "";
+  }
+  const trimmed = password.trim();
+  if (trimmed.length < EXPORT_PASSWORD_MIN_LENGTH) {
+    showToast(`Use at least ${EXPORT_PASSWORD_MIN_LENGTH} characters.`);
+    return "";
+  }
+  return trimmed;
+}
+
+async function exportLocalFeed() {
+  const records = readStoredSecrets();
+  if (records.length === 0) {
+    showToast("No local secrets to export.");
+    return;
+  }
+  const password = readExportPassword("Export");
+  if (!password) {
+    return;
+  }
+
+  const secrets = [];
+  for (const record of records.slice(0, MAX_OWNER_SECRETS)) {
+    try {
+      const secret = await decryptLocalValue(record.localSecret);
+      const passphrase = record.localPassphrase ? await decryptLocalValue(record.localPassphrase) : "";
+      const totpSecret = record.localTOTPSecret ? await decryptLocalValue(record.localTOTPSecret) : "";
+      secrets.push({
+        id: String(record.id || crypto.randomUUID()),
+        roomCode: validLocalRoomCode(record.roomCode) ? record.roomCode : null,
+        hint: String(record.hint || "").slice(0, MAX_HINT_LENGTH),
+        createdAt: normalizeCreatedAt(record.createdAt) ?? Date.now(),
+        burnAfterRead: record.burnAfterRead === true,
+        secret: secret.slice(0, MAX_SECRET_LENGTH),
+        passphrase: passphrase.slice(0, MAX_PASSPHRASE_LENGTH),
+        totpSecret,
+        authMode: normalizeAuthMode(record.authMode),
+        expiresAt: normalizeExpiresAt(record.expiresAt),
+        active: record.active !== false,
+      });
+    } catch (_error) {
+      continue;
+    }
+  }
+
+  if (secrets.length === 0) {
+    showToast("No readable local secrets to export.");
+    return;
+  }
+
+  const payload = {
+    kind: EXPORT_KIND,
+    version: EXPORT_VERSION,
+    exportedAt: Date.now(),
+    browserId: appState.identity?.browserId || "",
+    secrets,
+  };
+  const encrypted = await encryptExportPayload(password, payload);
+  downloadTextFile(`shhx-feed-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(encrypted, null, 2));
+  showToast(`Encrypted feed exported (${secrets.length}).`);
+}
+
+async function importLocalFeed(file) {
+  const password = readExportPassword("Import");
+  if (!password) {
+    return;
+  }
+
+  const raw = await file.text();
+  const envelope = safeJSONParse(raw);
+  const payload = await decryptExportPayload(password, envelope);
+  const secrets = Array.isArray(payload?.secrets) ? payload.secrets : [];
+  if (payload?.kind !== EXPORT_KIND || payload.version !== EXPORT_VERSION || secrets.length === 0) {
+    showToast("Invalid encrypted feed file.");
+    return;
+  }
+
+  const existing = readStoredSecrets();
+  const existingIDs = new Set(existing.map((item) => item.id));
+  const spaceLeft = Math.max(0, MAX_OWNER_SECRETS - existing.length);
+  if (spaceLeft === 0) {
+    showToast(`Secret limit reached (${MAX_OWNER_SECRETS}). Remove one before importing.`);
+    return;
+  }
+
+  const imported = [];
+  for (const item of secrets) {
+    if (imported.length >= spaceLeft) {
+      break;
+    }
+    const record = await buildImportedLocalRecord(item, existingIDs);
+    if (record) {
+      imported.push(record);
+      existingIDs.add(record.id);
+    }
+  }
+
+  if (imported.length === 0) {
+    showToast("No compatible secrets were imported.");
+    return;
+  }
+
+  const merged = [...imported, ...existing].slice(0, MAX_OWNER_SECRETS);
+  localStorage.setItem(LOCAL_SECRET_LIST_STORAGE, JSON.stringify(merged));
+  showToast(`Imported ${imported.length} encrypted local secrets. Reloading.`);
+  window.setTimeout(() => {
+    window.location.href = "/";
+  }, 650);
+}
+
+async function buildImportedLocalRecord(item, existingIDs) {
+  const plaintext = String(item?.secret || "").trim();
+  if (!plaintext || plaintext.length > MAX_SECRET_LENGTH) {
+    return null;
+  }
+  const authMode = normalizeAuthMode(item.authMode);
+  const passphrase = authMode === "passphrase" ? String(item.passphrase || "").slice(0, MAX_PASSPHRASE_LENGTH) : "";
+  const totpSecret = authMode === "totp" ? String(item.totpSecret || "").trim() : "";
+  if (authMode === "passphrase" && !passphrase) {
+    return null;
+  }
+  if (authMode === "totp" && !totpSecret) {
+    return null;
+  }
+
+  let id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : crypto.randomUUID();
+  if (existingIDs.has(id)) {
+    id = crypto.randomUUID();
+  }
+  return {
+    id,
+    roomCode: validLocalRoomCode(item.roomCode) ? String(item.roomCode).trim().toUpperCase() : null,
+    hint: String(item.hint || "").trim().slice(0, MAX_HINT_LENGTH),
+    createdAt: normalizeCreatedAt(item.createdAt) ?? Date.now(),
+    burnAfterRead: item.burnAfterRead === true,
+    localSecret: await encryptLocalValue(plaintext),
+    localPassphrase: passphrase ? await encryptLocalValue(passphrase) : null,
+    localTOTPSecret: totpSecret ? await encryptLocalValue(totpSecret) : null,
+    authMode,
+    expiresAt: normalizeExpiresAt(item.expiresAt),
+    active: item.active !== false,
+  };
+}
+
+function normalizeAuthMode(value) {
+  switch (value) {
+    case "passphrase":
+    case "totp":
+      return value;
+    default:
+      return "none";
+  }
+}
+
+function validLocalRoomCode(value) {
+  return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(String(value || "").trim().toUpperCase());
+}
+
+async function encryptExportPayload(password, payload) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveExportKey(password, salt);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    textEncoder.encode(JSON.stringify(payload)),
+  );
+  return {
+    kind: EXPORT_KIND,
+    version: EXPORT_VERSION,
+    kdf: {
+      name: "PBKDF2-SHA256",
+      iterations: EXPORT_KDF_ITERATIONS,
+      salt: bytesToBase64(salt),
+    },
+    cipher: {
+      name: "AES-GCM",
+      iv: bytesToBase64(iv),
+      ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    },
+  };
+}
+
+async function decryptExportPayload(password, envelope) {
+  if (envelope?.kind !== EXPORT_KIND || envelope.version !== EXPORT_VERSION) {
+    return null;
+  }
+  const iterations = Number(envelope.kdf?.iterations || 0);
+  if (envelope.kdf?.name !== "PBKDF2-SHA256" || !Number.isFinite(iterations) || iterations < 100000) {
+    return null;
+  }
+  if (envelope.cipher?.name !== "AES-GCM") {
+    return null;
+  }
+  const key = await deriveExportKey(password, base64ToBytes(envelope.kdf.salt), iterations);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64ToBytes(envelope.cipher.iv) },
+    key,
+    base64ToBytes(envelope.cipher.ciphertext),
+  );
+  return safeJSONParse(textDecoder.decode(plaintext));
+}
+
+async function deriveExportKey(password, salt, iterations = EXPORT_KDF_ITERATIONS) {
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "application/json;charset=UTF-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function setupConnectivityRecovery() {
@@ -3139,7 +3410,12 @@ function bytesToHex(bytes) {
 }
 
 function bytesToBase64(bytes) {
-  return btoa(String.fromCharCode(...bytes));
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
 }
 
 function base64ToBytes(value) {

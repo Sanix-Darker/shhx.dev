@@ -26,6 +26,41 @@ test.describe("live share flow", () => {
     await owner.close();
   });
 
+  test("exports and imports the local feed with encryption", async ({ browser }) => {
+    const owner = await browser.newContext({ acceptDownloads: true });
+    const page = await owner.newPage();
+
+    await page.goto("/");
+    const roomCode = await createSecret(page, {
+      secret: "portable local backup secret",
+      hint: "portable",
+    });
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept("backup-pass");
+    });
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export encrypted feed" }).click();
+    const download = await downloadPromise;
+    const exportPath = await download.path();
+    expect(exportPath).toBeTruthy();
+
+    await page.evaluate(() => {
+      localStorage.removeItem("shhx.localSecrets");
+    });
+    await page.reload();
+    await expect(page.locator('#feed details.secret-card[data-room-code="' + roomCode + '"]')).toHaveCount(0);
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept("backup-pass");
+    });
+    await page.setInputFiles("#feed-import-file", exportPath);
+    await expect(page.locator('#feed details.secret-card[data-room-code="' + roomCode + '"]')).toBeVisible();
+    await expect(page.locator('#feed details.secret-card[data-room-code="' + roomCode + '"] [data-card-hint]')).toContainText("portable");
+
+    await owner.close();
+  });
+
   test("reports decrypt failure before passphrase success", async ({ browser }) => {
     const owner = await browser.newContext();
     const recipient = await browser.newContext();

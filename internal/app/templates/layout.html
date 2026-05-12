@@ -286,6 +286,23 @@
           <p class="footer-meta-row">
             <button type="button" class="browser-id-badge" id="identity-state" aria-label="Copy browser id" title="Copy browser id">...</button>
             <span class="browser-id-badge project-version-badge" aria-label="Project version {{ .ProjectVersion }}" title="Project version {{ .ProjectVersion }}">{{ .ProjectVersion }}</span>
+            <button type="button" class="icon-button" id="feed-export-button" aria-label="Export encrypted feed" title="Export encrypted feed">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 3v12" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M5 19h14" />
+              </svg>
+              <span class="sr-only">Export encrypted feed</span>
+            </button>
+            <button type="button" class="icon-button" id="feed-import-button" aria-label="Import encrypted feed" title="Import encrypted feed">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 21V9" />
+                <path d="m7 14 5-5 5 5" />
+                <path d="M5 5h14" />
+              </svg>
+              <span class="sr-only">Import encrypted feed</span>
+            </button>
+            <input type="file" id="feed-import-file" accept="application/json,.json" hidden>
             <button type="button" class="icon-button" id="theme-toggle-button" aria-label="Switch to dark theme" title="Switch to dark theme">
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z" />
