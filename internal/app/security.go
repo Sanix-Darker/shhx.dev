@@ -187,6 +187,8 @@ func withRateLimit(limiter *rateLimiter, next http.Handler) http.Handler {
 
 func classifyRoute(r *http.Request) string {
 	switch {
+	case r.URL.Path == "/healthz" && r.Method == http.MethodGet:
+		return "other"
 	case r.URL.Path == "/" && r.Method == http.MethodGet:
 		return "index"
 	case r.URL.Path == "/preview.svg" && r.Method == http.MethodGet:

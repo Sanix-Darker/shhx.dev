@@ -84,6 +84,7 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", s.static))
 	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/favicon.ico", s.handleFavicon)
 	mux.HandleFunc("/preview.svg", s.handlePreviewSVG)
 	mux.HandleFunc("/ui/rooms/create", s.handleCreateRoomCard)
@@ -91,6 +92,18 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/owner/events", s.handleOwnerEvents)
 	mux.HandleFunc("/api/rooms/", s.handleRoomAPI)
 	return withSecurityHeaders(withRateLimit(s.limiter, mux))
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	if _, err := io.WriteString(w, `{"status":"ok"}`+"\n"); err != nil {
+		return
+	}
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

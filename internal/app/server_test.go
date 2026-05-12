@@ -120,6 +120,27 @@ func TestSecurityHeadersPresent(t *testing.T) {
 	}
 }
 
+func TestHealthzReturnsMinimalStatus(t *testing.T) {
+	server, err := NewServer("test")
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rr := httptest.NewRecorder()
+	server.Routes().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if got := strings.TrimSpace(rr.Body.String()); got != `{"status":"ok"}` {
+		t.Fatalf("unexpected health body: %q", got)
+	}
+	if strings.Contains(rr.Body.String(), "room") || strings.Contains(rr.Body.String(), "secret") {
+		t.Fatal("health endpoint must not expose runtime room or secret data")
+	}
+}
+
 func TestIndexEmbedsEphemeralTurnConfig(t *testing.T) {
 	t.Setenv("SHHX_TURN_SECRET", "turn-secret-for-test")
 	t.Setenv("SHHX_TURN_URIS", "stun:turn.example.com:3478,turn:turn.example.com:3478?transport=udp,turn:turn.example.com:3478?transport=tcp")
