@@ -12,6 +12,7 @@ It is built for the narrow case where one browser creates a secret, stays online
 - no persisted secret storage on the server
 - live share links like `/<secret-id>`
 - browser-side encryption before payload delivery
+- hidden OpenPGP envelope layered on top of live delivery
 - direct browser-to-browser transfer over WebRTC
 - optional delete-on-read
 - optional passphrase factor
@@ -57,6 +58,9 @@ If the sender disconnects, the live handoff stops. `shhx` is not an offline drop
 
 - the browser generates a local anonymous identity
 - the sender secret is encrypted client-side
+- the payload is wrapped in a hidden OpenPGP envelope before live transport
+- the OpenPGP library is browser-side only and loaded from embedded assets
+- there is no server-side GPG process and no server-side key storage
 - the decryption factor can include:
   - nothing extra
   - a passphrase
