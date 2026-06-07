@@ -32,6 +32,19 @@ Its goals are:
 - a sender or receiver intentionally leaking the plaintext
 - WebRTC connectivity failures caused by hostile or restrictive networks
 
+## Access Control
+
+The live link is the access factor on the receiving side. The sender validates
+the recipient browser identity before delivery, but the recipient does not
+validate the sender, and the link grants access to whoever opens it first while
+the sender is online. Treat the link as a bearer credential: deliver it over a
+trusted channel, and add a passphrase or authenticator factor when the link
+itself may be exposed.
+
+When `shhx` is exposed directly to the internet rather than behind a trusted
+reverse proxy, set `SHHX_TRUST_PROXY=false` so forwarded headers cannot be used
+to spoof a client source IP or request scheme.
+
 ## Local Persistence
 
 Owner-side local feed persistence is encrypted at rest in the browser, but it still depends on endpoint integrity.

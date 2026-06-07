@@ -72,6 +72,14 @@ If the sender disconnects, the live handoff stops. `shhx` is not an offline drop
 - request limits, validation, rate limiting, and strict security headers are enabled on the HTTP side
 - `/healthz` returns only minimal service health, never room or secret data
 
+## Access Control
+
+Possession of the live link is the access factor on the receiving side. The
+sender validates the recipient browser identity before delivering, but the
+recipient does not validate the sender. Anyone who opens the link first, while
+the sender is online, can receive the secret. Add a passphrase or authenticator
+factor when the link itself may be exposed.
+
 ## Endpoint Caveat
 
 `shhx` protects secrets in transit and avoids server-side secret storage, but it does not protect a compromised browser or device.
