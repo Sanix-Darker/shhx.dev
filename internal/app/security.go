@@ -26,13 +26,18 @@ const (
 	maxSecretLength     = 4096
 	maxPassphraseLength = 128
 	maxTOTPCodeLength   = 6
+
+	// maxOwnerSubscriptions caps how many rooms a single owner SSE stream may
+	// multiplex. It bounds per-connection goroutines and channel fan-in.
+	maxOwnerSubscriptions = 100
 )
 
 var (
-	errInvalidRoomCode = errors.New("invalid room code")
-	errInvalidPeerID   = errors.New("invalid peer id")
-	errInvalidOrigin   = errors.New("invalid origin")
-	errRateLimited     = errors.New("rate limit exceeded")
+	errInvalidRoomCode   = errors.New("invalid room code")
+	errInvalidPeerID     = errors.New("invalid peer id")
+	errInvalidOrigin     = errors.New("invalid origin")
+	errRateLimited       = errors.New("rate limit exceeded")
+	errTooManySubscripts = errors.New("too many subscriptions")
 )
 
 type rateConfig struct {
@@ -42,15 +47,22 @@ type rateConfig struct {
 }
 
 type rateBucket struct {
-	tokens   float64
-	lastSeen time.Time
+	tokens        float64
+	lastSeen      time.Time
+	cleanupWindow time.Duration
 }
 
 type rateLimiter struct {
-	mu      sync.Mutex
-	limits  map[string]rateConfig
-	buckets map[string]*rateBucket
+	mu        sync.Mutex
+	limits    map[string]rateConfig
+	buckets   map[string]*rateBucket
+	lastPrune time.Time
 }
+
+// pruneInterval bounds how often the limiter sweeps idle buckets. Pruning on
+// every request would make each call O(buckets); throttling keeps the hot path
+// amortized O(1) while still bounding memory growth.
+const pruneInterval = time.Minute
 
 func newRateLimiter() *rateLimiter {
 	return &rateLimiter{
@@ -85,13 +97,14 @@ func (l *rateLimiter) allow(ip, bucketName string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.pruneLocked(now)
+	l.maybePruneLocked(now)
 
 	bucket, ok := l.buckets[key]
 	if !ok {
 		l.buckets[key] = &rateBucket{
-			tokens:   limit.burst - 1,
-			lastSeen: now,
+			tokens:        limit.burst - 1,
+			lastSeen:      now,
+			cleanupWindow: limit.cleanupWindow,
 		}
 		return true
 	}
@@ -113,18 +126,16 @@ func (l *rateLimiter) allow(ip, bucketName string, now time.Time) bool {
 	return true
 }
 
-func (l *rateLimiter) pruneLocked(now time.Time) {
+// maybePruneLocked sweeps idle buckets at most once per pruneInterval. The
+// caller must hold l.mu. Each bucket carries its own cleanup window, so pruning
+// avoids re-parsing keys or re-looking up limits.
+func (l *rateLimiter) maybePruneLocked(now time.Time) {
+	if !l.lastPrune.IsZero() && now.Sub(l.lastPrune) < pruneInterval {
+		return
+	}
+	l.lastPrune = now
 	for key, bucket := range l.buckets {
-		parts := strings.SplitN(key, "|", 2)
-		if len(parts) != 2 {
-			delete(l.buckets, key)
-			continue
-		}
-		limit, ok := l.limits[parts[0]]
-		if !ok {
-			limit = l.limits["other"]
-		}
-		if now.Sub(bucket.lastSeen) > limit.cleanupWindow {
+		if now.Sub(bucket.lastSeen) > bucket.cleanupWindow {
 			delete(l.buckets, key)
 		}
 	}
@@ -168,14 +179,14 @@ func cspStyleNonce(r *http.Request) string {
 	return ""
 }
 
-func withRateLimit(limiter *rateLimiter, next http.Handler) http.Handler {
+func withRateLimit(limiter *rateLimiter, trustProxy bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if limiter == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		if !limiter.allow(clientIP(r), classifyRoute(r), time.Now()) {
+		if !limiter.allow(clientIP(r, trustProxy), classifyRoute(r), time.Now()) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, errRateLimited.Error(), http.StatusTooManyRequests)
 			return
@@ -212,11 +223,11 @@ func classifyRoute(r *http.Request) string {
 	}
 }
 
-func clientIP(r *http.Request) string {
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		if len(parts) > 0 {
-			if ip := strings.TrimSpace(parts[0]); net.ParseIP(ip) != nil {
+func clientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+			first, _, _ := strings.Cut(forwarded, ",")
+			if ip := strings.TrimSpace(first); net.ParseIP(ip) != nil {
 				return ip
 			}
 		}
@@ -232,7 +243,7 @@ func clientIP(r *http.Request) string {
 	return "unknown"
 }
 
-func ensureSameOrigin(r *http.Request) error {
+func ensureSameOrigin(r *http.Request, trustProxy bool) error {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
 		return nil
@@ -254,8 +265,10 @@ func ensureSameOrigin(r *http.Request) error {
 	if r.TLS != nil {
 		expectedScheme = "https"
 	}
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
-		expectedScheme = forwarded
+	if trustProxy {
+		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwarded != "" {
+			expectedScheme = forwarded
+		}
 	}
 	if parsed.Scheme != expectedScheme {
 		return errInvalidOrigin
