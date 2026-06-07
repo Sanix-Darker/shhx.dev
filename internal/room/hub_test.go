@@ -217,6 +217,35 @@ func TestHubPruneExpiredRooms(t *testing.T) {
 	}
 }
 
+func TestHubPruneThenCleanupDoesNotDoubleClose(t *testing.T) {
+	hub := NewHub()
+	hub.roomTTL = time.Minute
+
+	roomCode := hub.CreateRoom("owner-1", "Owner")
+	if err := hub.JoinRoom(roomCode, "guest-1", "Guest"); err != nil {
+		t.Fatalf("join room: %v", err)
+	}
+
+	_, guestCleanup, err := hub.Subscribe(roomCode, "guest-1")
+	if err != nil {
+		t.Fatalf("subscribe guest: %v", err)
+	}
+
+	hub.mu.Lock()
+	hub.rooms[roomCode].lastActive = time.Now().Add(-2 * time.Minute)
+	hub.mu.Unlock()
+	hub.pruneExpired(time.Now())
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("subscription cleanup panicked after prune: %v", r)
+		}
+	}()
+	// The SSE handler's deferred cleanup still runs after the room was pruned.
+	// It must not close the already-closed subscription channel a second time.
+	guestCleanup()
+}
+
 func expectEvent(t *testing.T, ch <-chan Event) Event {
 	t.Helper()
 	select {

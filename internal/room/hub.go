@@ -39,7 +39,20 @@ type SignalData struct {
 }
 
 type subscription struct {
-	ch chan Event
+	ch     chan Event
+	closed bool
+}
+
+// closeSubscriptionLocked closes a subscription channel at most once. All
+// callers must hold the hub mutex. This guards against a double-close panic
+// when a room teardown path (prune/evict) closes a channel that a live SSE
+// handler will also close from its own cleanup.
+func closeSubscriptionLocked(sub *subscription) {
+	if sub == nil || sub.closed {
+		return
+	}
+	sub.closed = true
+	close(sub.ch)
 }
 
 type peer struct {
@@ -205,7 +218,7 @@ func (h *Hub) Subscribe(code, peerID string) (<-chan Event, func(), error) {
 				}
 			}
 		}
-		close(sub.ch)
+		closeSubscriptionLocked(sub)
 	}
 
 	return sub.ch, cleanup, nil
@@ -321,7 +334,7 @@ func (h *Hub) evictStaleOwnersLocked(code string, state *roomState, now time.Tim
 		delete(state.peers, id)
 		for _, otherPeer := range state.peers {
 			for sub := range otherPeer.streams {
-				close(sub.ch)
+				closeSubscriptionLocked(sub)
 			}
 		}
 		return
@@ -372,7 +385,7 @@ func (h *Hub) pruneExpired(now time.Time) {
 		if now.Sub(state.lastActive) > h.roomTTL {
 			for _, peer := range state.peers {
 				for sub := range peer.streams {
-					close(sub.ch)
+					closeSubscriptionLocked(sub)
 				}
 			}
 			delete(h.rooms, code)
@@ -380,16 +393,22 @@ func (h *Hub) pruneExpired(now time.Time) {
 	}
 }
 
+// codeLength is the fixed length of generated room codes. It matches the
+// server-side validator (maxRoomCodeLen).
+const codeLength = 6
+
+// codeAlphabet is the room-code alphabet. Its length is exactly 32, so masking
+// a random byte with 31 selects a character with no modulo bias.
+const codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
 func randomCodeLocked(existing map[string]*roomState) string {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	buf := make([]byte, codeLength)
 	for {
-		buf := make([]byte, 6)
-		raw := make([]byte, 6)
-		if _, err := rand.Read(raw); err != nil {
+		if _, err := rand.Read(buf); err != nil {
 			panic(err)
 		}
-		for i := range buf {
-			buf[i] = alphabet[int(raw[i])%len(alphabet)]
+		for i, b := range buf {
+			buf[i] = codeAlphabet[b&31]
 		}
 		code := string(buf)
 		if _, ok := existing[code]; !ok {
