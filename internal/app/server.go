@@ -32,6 +32,8 @@ type Server struct {
 	templates    *template.Template
 	static       http.Handler
 	buildVersion string
+	ice          *iceConfig
+	trustProxy   bool
 }
 
 type pageData struct {
@@ -60,6 +62,169 @@ type ownerRoomEvent struct {
 
 const defaultICEServersJSON = `[{"urls":["stun:stun.l.google.com:19302"]}]`
 
+const (
+	// turnTTLDefaultSeconds is the ephemeral TURN credential lifetime used when
+	// SHHX_TURN_TTL_SECONDS is unset or out of range.
+	turnTTLDefaultSeconds = 3600
+	// turnTTLMinSeconds and turnTTLMaxSeconds bound the accepted TURN TTL.
+	turnTTLMinSeconds = 300
+	turnTTLMaxSeconds = 86400
+
+	// envICEServers, envTURNSecret, envTURNURIs, and envTURNTTLSeconds name the
+	// runtime environment variables that configure ICE/TURN. They are read once
+	// at startup, not per request.
+	envICEServers     = "SHHX_ICE_SERVERS"
+	envTURNSecret     = "SHHX_TURN_SECRET"
+	envTURNURIs       = "SHHX_TURN_URIS"
+	envTURNTTLSeconds = "SHHX_TURN_TTL_SECONDS"
+
+	// envTrustProxy controls whether X-Forwarded-* headers are honored. It
+	// defaults to true so the documented reverse-proxy deployment (Caddy
+	// terminating TLS and forwarding over plain HTTP) keeps working. Set it to
+	// "false" when the binary is exposed directly so clients cannot spoof their
+	// source IP or request scheme.
+	envTrustProxy = "SHHX_TRUST_PROXY"
+)
+
+// resolveTrustProxy reads SHHX_TRUST_PROXY once at startup. Any value other
+// than an explicit disable keeps the default (trust) so existing deployments
+// behind a reverse proxy are unaffected.
+func resolveTrustProxy() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(envTrustProxy))) {
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return true
+	}
+}
+
+// iceConfig holds ICE/TURN configuration resolved once at startup. The static
+// portions (validated JSON, parsed STUN/TURN URIs, secret, TTL) are computed in
+// newICEConfig; only the time-based TURN credential is recomputed per render.
+type iceConfig struct {
+	staticJSON string // pre-validated SHHX_ICE_SERVERS or the built-in default
+
+	turnSecret []byte
+	stunURLs   []string
+	turnURLs   []string
+	turnTTL    time.Duration
+}
+
+// newICEConfig reads ICE/TURN environment configuration once. Returning a
+// resolved struct keeps env access at the process boundary and avoids
+// re-parsing on every index request.
+func newICEConfig() *iceConfig {
+	cfg := &iceConfig{staticJSON: resolveStaticICEServersJSON()}
+
+	secret := strings.TrimSpace(os.Getenv(envTURNSecret))
+	urisRaw := strings.TrimSpace(os.Getenv(envTURNURIs))
+	if secret == "" || urisRaw == "" {
+		return cfg
+	}
+
+	for part := range strings.SplitSeq(urisRaw, ",") {
+		uri := strings.TrimSpace(part)
+		switch {
+		case uri == "":
+			continue
+		case strings.HasPrefix(uri, "stun:") || strings.HasPrefix(uri, "stuns:"):
+			cfg.stunURLs = append(cfg.stunURLs, uri)
+		case strings.HasPrefix(uri, "turn:") || strings.HasPrefix(uri, "turns:"):
+			cfg.turnURLs = append(cfg.turnURLs, uri)
+		}
+	}
+	if len(cfg.stunURLs) == 0 && len(cfg.turnURLs) == 0 {
+		return cfg
+	}
+
+	cfg.turnSecret = []byte(secret)
+	cfg.turnTTL = turnTTLDefaultSeconds * time.Second
+	if raw := strings.TrimSpace(os.Getenv(envTURNTTLSeconds)); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= turnTTLMinSeconds && parsed <= turnTTLMaxSeconds {
+			cfg.turnTTL = time.Duration(parsed) * time.Second
+		}
+	}
+	return cfg
+}
+
+// resolveStaticICEServersJSON validates SHHX_ICE_SERVERS once at startup,
+// falling back to the built-in STUN default when unset or invalid.
+func resolveStaticICEServersJSON() string {
+	value := strings.TrimSpace(os.Getenv(envICEServers))
+	if value == "" {
+		return defaultICEServersJSON
+	}
+	var parsed []map[string]any
+	if err := json.Unmarshal([]byte(value), &parsed); err != nil || len(parsed) == 0 {
+		return defaultICEServersJSON
+	}
+	return value
+}
+
+// serversJSON returns the ICE server list for a page render. When TURN is
+// configured it mints a fresh short-lived credential; otherwise it returns the
+// pre-validated static JSON without re-reading the environment.
+func (c *iceConfig) serversJSON(now time.Time) string {
+	if c.turnSecret == nil || (len(c.stunURLs) == 0 && len(c.turnURLs) == 0) {
+		return c.staticJSON
+	}
+
+	username := fmt.Sprintf("%d:shhx", now.Add(c.turnTTL).Unix())
+	mac := hmac.New(sha1.New, c.turnSecret)
+	mac.Write([]byte(username))
+	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+	config := make([]map[string]any, 0, 2)
+	if len(c.stunURLs) > 0 {
+		config = append(config, map[string]any{"urls": c.stunURLs})
+	}
+	if len(c.turnURLs) > 0 {
+		config = append(config, map[string]any{
+			"urls":       c.turnURLs,
+			"username":   username,
+			"credential": credential,
+		})
+	}
+	payload, err := json.Marshal(config)
+	if err != nil {
+		return c.staticJSON
+	}
+	return string(payload)
+}
+
+// sseHeartbeatInterval is the keepalive cadence for Server-Sent Events streams.
+const sseHeartbeatInterval = 20 * time.Second
+
+// prepareSSEStream sets streaming headers, clears any per-connection write
+// deadline so long-lived event streams survive the server WriteTimeout, sends
+// the reconnect hint, and returns the flusher. It returns false if the
+// ResponseWriter cannot stream, in which case it has already written an error.
+func prepareSSEStream(w http.ResponseWriter) (http.Flusher, bool) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "stream unsupported", http.StatusInternalServerError)
+		return nil, false
+	}
+
+	// The HTTP server applies a finite WriteTimeout for normal routes. SSE
+	// connections are long-lived, so clear the write deadline for this
+	// connection only. Failing to clear it is non-fatal (the stream just
+	// inherits the default deadline), so the error is intentionally ignored.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+
+	header := w.Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	header.Set("Connection", "keep-alive")
+	header.Set("X-Accel-Buffering", "no")
+
+	if _, err := io.WriteString(w, "retry: 2000\n\n"); err != nil {
+		return nil, false
+	}
+	flusher.Flush()
+	return flusher, true
+}
+
 func NewServer(buildVersion string) (*Server, error) {
 	tmpl, err := template.ParseFS(assets, "templates/*.html")
 	if err != nil {
@@ -71,12 +236,19 @@ func NewServer(buildVersion string) (*Server, error) {
 		return nil, fmt.Errorf("static fs: %w", err)
 	}
 
+	static, err := newStaticHandler(staticFS)
+	if err != nil {
+		return nil, fmt.Errorf("load static assets: %w", err)
+	}
+
 	return &Server{
 		hub:          room.NewHub(),
 		limiter:      newRateLimiter(),
 		templates:    tmpl,
-		static:       http.FileServer(http.FS(staticFS)),
+		static:       static,
 		buildVersion: strings.TrimSpace(buildVersion),
+		ice:          newICEConfig(),
+		trustProxy:   resolveTrustProxy(),
 	}, nil
 }
 
@@ -91,7 +263,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/ui/rooms/join", s.handleJoinRoomCard)
 	mux.HandleFunc("/api/owner/events", s.handleOwnerEvents)
 	mux.HandleFunc("/api/rooms/", s.handleRoomAPI)
-	return withSecurityHeaders(withRateLimit(s.limiter, mux))
+	return withSecurityHeaders(withRateLimit(s.limiter, s.trustProxy, mux))
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +289,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	baseURL := originForRequest(r)
+	baseURL := originForRequest(r, s.trustProxy)
 	title := "shhx"
 	desc := "Create one secret. Share one live encrypted link."
 	if shareCode != "" {
@@ -129,7 +301,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Title:          "shhx",
 		ShareCode:      shareCode,
 		StyleNonce:     cspStyleNonce(r),
-		ICEServers:     iceServersJSON(),
+		ICEServers:     s.ice.serversJSON(time.Now()),
 		ProjectVersion: s.buildVersion,
 		PreviewTitle:   title,
 		PreviewDesc:    desc,
@@ -138,80 +310,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func iceServersJSON() string {
-	if value := turnICEServersJSON(); value != "" {
-		return value
-	}
-	value := strings.TrimSpace(os.Getenv("SHHX_ICE_SERVERS"))
-	if value == "" {
-		return defaultICEServersJSON
-	}
-	var parsed []map[string]any
-	if err := json.Unmarshal([]byte(value), &parsed); err != nil || len(parsed) == 0 {
-		return defaultICEServersJSON
-	}
-	return value
-}
-
-func turnICEServersJSON() string {
-	secret := strings.TrimSpace(os.Getenv("SHHX_TURN_SECRET"))
-	urisRaw := strings.TrimSpace(os.Getenv("SHHX_TURN_URIS"))
-	if secret == "" || urisRaw == "" {
-		return ""
-	}
-
-	var stunURLs []string
-	var turnURLs []string
-	for _, part := range strings.Split(urisRaw, ",") {
-		uri := strings.TrimSpace(part)
-		if uri == "" {
-			continue
-		}
-		switch {
-		case strings.HasPrefix(uri, "stun:") || strings.HasPrefix(uri, "stuns:"):
-			stunURLs = append(stunURLs, uri)
-		case strings.HasPrefix(uri, "turn:") || strings.HasPrefix(uri, "turns:"):
-			turnURLs = append(turnURLs, uri)
-		}
-	}
-
-	if len(stunURLs) == 0 && len(turnURLs) == 0 {
-		return ""
-	}
-
-	ttl := 3600
-	if raw := strings.TrimSpace(os.Getenv("SHHX_TURN_TTL_SECONDS")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 300 && parsed <= 86400 {
-			ttl = parsed
-		}
-	}
-
-	username := fmt.Sprintf("%d:shhx", time.Now().Add(time.Duration(ttl)*time.Second).Unix())
-	mac := hmac.New(sha1.New, []byte(secret))
-	mac.Write([]byte(username))
-	credential := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-	var config []map[string]any
-	if len(stunURLs) > 0 {
-		config = append(config, map[string]any{"urls": stunURLs})
-	}
-	if len(turnURLs) > 0 {
-		config = append(config, map[string]any{
-			"urls":       turnURLs,
-			"username":   username,
-			"credential": credential,
-		})
-	}
-	if len(config) == 0 {
-		return ""
-	}
-	payload, err := json.Marshal(config)
-	if err != nil {
-		return ""
-	}
-	return string(payload)
 }
 
 func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
@@ -245,6 +343,10 @@ func shareCodeFromRequest(r *http.Request) (string, bool) {
 }
 
 func (s *Server) handlePreviewSVG(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	if _, err := io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
@@ -269,7 +371,7 @@ func (s *Server) handleCreateRoomCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := ensureSameOrigin(r); err != nil {
+	if err := ensureSameOrigin(r, s.trustProxy); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -316,7 +418,7 @@ func (s *Server) handleJoinRoomCard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := ensureSameOrigin(r); err != nil {
+	if err := ensureSameOrigin(r, s.trustProxy); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -411,6 +513,9 @@ func parseOwnerSubscriptions(r *http.Request) ([]ownerSubscription, error) {
 			continue
 		}
 		seen[key] = struct{}{}
+		if len(subs) >= maxOwnerSubscriptions {
+			return nil, errTooManySubscripts
+		}
 		subs = append(subs, ownerSubscription{roomCode: roomCode, peerID: peerID})
 	}
 	if len(subs) == 0 {
@@ -433,11 +538,11 @@ func (s *Server) handleOwnerEvents(w http.ResponseWriter, r *http.Request) {
 
 	subs, err := parseOwnerSubscriptions(r)
 	if err != nil {
+		if errors.Is(err, errTooManySubscripts) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if len(subs) > 100 {
-		http.Error(w, "too many subscriptions", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -469,21 +574,10 @@ func (s *Server) handleOwnerEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := prepareSSEStream(w)
 	if !ok {
-		http.Error(w, "stream unsupported", http.StatusInternalServerError)
 		return
 	}
-
-	if _, err := io.WriteString(w, "retry: 2000\n\n"); err != nil {
-		return
-	}
-	flusher.Flush()
 
 	merged := make(chan ownerRoomEvent, 256)
 	ctx := r.Context()
@@ -507,7 +601,7 @@ func (s *Server) handleOwnerEvents(w http.ResponseWriter, r *http.Request) {
 		}(sub.roomCode, sub.ch)
 	}
 
-	heartbeat := time.NewTicker(20 * time.Second)
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 	for {
 		select {
@@ -550,24 +644,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request, roomCode s
 	}
 	defer cleanup()
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
-
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := prepareSSEStream(w)
 	if !ok {
-		http.Error(w, "stream unsupported", http.StatusInternalServerError)
 		return
 	}
-
-	if _, err := io.WriteString(w, "retry: 2000\n\n"); err != nil {
-		return
-	}
-	flusher.Flush()
 
 	ctx := r.Context()
-	heartbeat := time.NewTicker(20 * time.Second)
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
 	defer heartbeat.Stop()
 	for {
 		select {
@@ -604,7 +687,7 @@ func (s *Server) handleSignal(w http.ResponseWriter, r *http.Request, roomCode s
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := ensureSameOrigin(r); err != nil {
+	if err := ensureSameOrigin(r, s.trustProxy); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -654,7 +737,7 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request, roomCode st
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := ensureSameOrigin(r); err != nil {
+	if err := ensureSameOrigin(r, s.trustProxy); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -669,23 +752,29 @@ func (s *Server) handleLeave(w http.ResponseWriter, r *http.Request, roomCode st
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func originForRequest(r *http.Request) string {
+func originForRequest(r *http.Request, trustProxy bool) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
-		scheme = forwarded
+	if trustProxy {
+		if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+			scheme = forwarded
+		}
 	}
 	return scheme + "://" + r.Host
 }
+
+// tokenEncoding produces URL/attribute-safe base32 tokens without padding. It
+// is created once and is safe for concurrent use.
+var tokenEncoding = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 func randomToken(size int) string {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
 		panic(err)
 	}
-	return strings.TrimRight(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf), "=")
+	return tokenEncoding.EncodeToString(buf)
 }
 
 func statusForErr(err error) int {
