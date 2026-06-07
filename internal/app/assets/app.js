@@ -862,7 +862,7 @@ async function restoreLocalSecrets() {
           headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
           body: new URLSearchParams({
             display_name: "Sender",
-            ...(normalizedRecord.roomCode ? { room_code: normalizedRecord.roomCode } : {}),
+            ...(validLocalRoomCode(normalizedRecord.roomCode) ? { room_code: normalizedRecord.roomCode } : {}),
           }),
         });
         if (!response.ok) {
@@ -920,7 +920,7 @@ async function provisionOwnerSession(session) {
       headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
       body: new URLSearchParams({
         display_name: "Sender",
-        ...(session.pendingSecret?.roomCode ? { room_code: session.pendingSecret.roomCode } : {}),
+        ...(validLocalRoomCode(session.pendingSecret?.roomCode) ? { room_code: session.pendingSecret.roomCode } : {}),
       }),
     });
     if (!response.ok) {
